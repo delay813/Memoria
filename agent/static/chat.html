@@ -7,7 +7,7 @@
     <style>
         :root {
             --sidebar-bg: #0f1429;
-            --sidebar-width: 220px;
+            --sidebar-width: 340px;
             --panel-bg: rgba(255, 255, 255, 0.78);
             --panel-border: rgba(255, 255, 255, 0.45);
             --glass-shadow: 0 8px 32px rgba(15, 23, 42, 0.18);
@@ -67,12 +67,17 @@
             color: white; border-color: var(--primary-soft);
         }
         .cs-avatar {
-            width: 42px; height: 42px; border-radius: 12px; object-fit: cover; flex-shrink: 0;
+            width: 52px; height: 52px; border-radius: 12px; object-fit: cover; flex-shrink: 0;
             border: 2px solid rgba(255,255,255,0.25); transition: all 0.25s ease; background: #2a3350;
         }
         .cs-item.active .cs-avatar { border-color: rgba(255,255,255,0.7); box-shadow: 0 4px 14px rgba(0,0,0,0.3); }
         .cs-meta { min-width: 0; flex: 1; }
-        .cs-name { font-size: 14px; font-weight: 600; }
+        .cs-name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+        .cs-status {
+            display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600;
+            background: rgba(34,197,94,0.16); color: #4ade80; border: 1px solid rgba(34,197,94,0.28); flex-shrink: 0;
+        }
+        .cs-status.busy { background: rgba(245,158,11,0.16); color: #fbbf24; border-color: rgba(245,158,11,0.28); }
         .cs-favor { font-size: 11px; color: var(--text-light); margin-top: 2px; }
         .unread-badge {
             margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px;
@@ -90,6 +95,43 @@
             font-size: 10px; padding: 2px 8px; border-radius: 999px;
             background: rgba(255,255,255,0.1); color: var(--primary-soft);
         }
+        .life-title { margin-top: 14px; font-size: 10px; letter-spacing: 2px; color: rgba(255,255,255,0.35); }
+        .life-feed { margin-top: 7px; display: flex; flex-direction: column; gap: 5px; }
+        .life-feed:empty { display: none; }
+        .life-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: rgba(255,255,255,0.82); }
+        .life-status {
+            font-size: 10px; padding: 1px 7px; border-radius: 999px;
+            background: rgba(34,197,94,0.16); color: #4ade80; border: 1px solid rgba(34,197,94,0.28);
+        }
+        .life-status.busy { background: rgba(245,158,11,0.16); color: #fbbf24; border-color: rgba(245,158,11,0.28); }
+        .life-event { font-size: 10.5px; color: rgba(255,255,255,0.55); line-height: 1.5; padding-left: 4px; }
+        .life-event.nar { color: rgba(255,255,255,0.38); font-style: italic; }
+        .world-time { margin-top: 3px; font-size: 12px; color: var(--primary-soft); font-weight: 600; letter-spacing: 1px; }
+        .world-day { margin-top: 2px; font-size: 10px; color: rgba(255,255,255,0.4); }
+        .nickname-row { display: flex; gap: 6px; margin-top: 10px; }
+        .nickname-input {
+            flex: 1; min-width: 0; padding: 7px 10px; border-radius: 10px;
+            border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.06);
+            color: #fff; font-size: 12px; outline: none;
+        }
+        .nickname-input::placeholder { color: rgba(255,255,255,0.35); }
+        .nickname-save {
+            padding: 0 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.16);
+            background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85); font-size: 12px;
+            cursor: pointer; transition: all .2s; flex-shrink: 0;
+        }
+        .nickname-save:hover { background: rgba(255,255,255,0.16); color: #fff; }
+        .sidebar-icon-btn.on { background: rgba(91,124,255,0.2); border-color: var(--primary-soft); color: #fff; }
+        .schedule-card { padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); }
+        .schedule-title { font-size: 11px; color: rgba(255,255,255,0.6); letter-spacing: 1px; margin-bottom: 8px; }
+        .schedule-list { display: flex; flex-direction: column; gap: 4px; }
+        .schedule-item { display: flex; align-items: center; gap: 8px; font-size: 11px; color: rgba(255,255,255,0.72); padding: 3px 6px; border-radius: 8px; }
+        .schedule-item .s-time { width: 84px; flex-shrink: 0; color: rgba(255,255,255,0.42); font-variant-numeric: tabular-nums; }
+        .schedule-item .s-label { flex: 1; }
+        .schedule-item .s-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(148,163,184,0.4); flex-shrink: 0; }
+        .schedule-item.current { background: rgba(91,124,255,0.18); color: #fff; border: 1px solid rgba(91,124,255,0.35); }
+        .schedule-item.current .s-time { color: var(--primary-soft); }
+        .schedule-item.current .s-dot { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
         .reset-btn {
             width: 100%; margin-top: 12px; padding: 8px 0;
             background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
@@ -117,7 +159,7 @@
 
         /* ---------- 聊天面板 ---------- */
         .chat-panel {
-            flex: 1; width: 100%; min-width: 420px; display: flex; flex-direction: column;
+            flex: 1; width: 100%; min-width: 360px; display: flex; flex-direction: column;
             background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 26px;
             box-shadow: var(--glass-shadow); backdrop-filter: blur(24px); overflow: hidden;
         }
@@ -160,6 +202,7 @@
         }
         .message.user .message-bubble { background: var(--user-bubble); color: white; border-bottom-right-radius: 5px; }
         .message.assistant .message-bubble { background: var(--ai-bubble); color: var(--text-dark); border-bottom-left-radius: 5px; }
+        .message.assistant .message-bubble.delayed { background: rgba(226,232,240,0.55); color: var(--text-muted); font-style: italic; }
         .message-time { font-size: 11px; color: var(--text-muted); padding: 0 4px; }
         .typing { display: inline-flex; gap: 5px; padding: 4px 2px; }
         .typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); animation: blink 1.2s infinite ease-in-out; }
@@ -190,21 +233,24 @@
         .send-btn:disabled { background: #cbd5e1; cursor: not-allowed; }
 
         /* ---------- 右侧角色卡 ---------- */
-        .character-panel { width: 270px; min-width: 270px; display: flex; flex-direction: column; }
+        .character-panel { width: 420px; min-width: 420px; display: flex; flex-direction: column; }
         .character-card {
             background: rgba(15, 20, 41, 0.55); backdrop-filter: blur(20px);
             border: 1px solid rgba(255,255,255,0.12); border-radius: 22px; padding: 16px;
             color: white; box-shadow: 0 12px 40px rgba(0,0,0,0.25);
             display: flex; flex-direction: column; gap: 12px;
+            max-height: 100%; overflow-y: auto;
         }
         .character-image-wrap {
-            width: 100%; aspect-ratio: 3 / 4; border-radius: 16px; overflow: hidden;
+            /* 固定高度 + 禁止 flex 压缩: 避免被下方组件挤压/遮挡, 超出的内容在卡片内滚动 */
+            width: 100%; height: min(44vh, 360px); flex-shrink: 0; border-radius: 16px; overflow: hidden;
             border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 8px 24px rgba(0,0,0,0.25);
             background: #1a2338;
         }
         .character-image-wrap img { width: 100%; height: 100%; object-fit: cover; object-position: center top; }
         .character-names h2 { font-size: 19px; font-weight: 700; }
         .character-names p { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 3px; }
+        .character-names p.card-status { color: var(--primary-soft); }
         .character-tags { display: flex; flex-wrap: wrap; gap: 6px; }
         .tag {
             padding: 4px 9px; border-radius: 10px; font-size: 10px;
@@ -225,12 +271,180 @@
             border-left: 3px solid var(--primary); font-size: 11.5px; color: rgba(255,255,255,0.6);
             line-height: 1.7; font-style: italic;
         }
+        .diary-btn {
+            width: 100%; margin-top: 12px; padding: 10px; border-radius: 14px;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            color: #fff; border: none; font-size: 13px; font-weight: 600; cursor: pointer;
+            transition: opacity 0.2s ease;
+        }
+        .diary-btn:hover { opacity: 0.85; }
+
+        /* 回忆日记弹窗 */
+        .diary-modal {
+            position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none;
+            align-items: center; justify-content: center; z-index: 100;
+        }
+        .diary-modal.open { display: flex; }
+        .diary-panel {
+            width: min(560px, 90vw); max-height: 80vh; overflow-y: auto;
+            background: #141a2e; border-radius: 16px; padding: 22px;
+            border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+        }
+        .diary-panel h3 { font-size: 16px; margin: 0 0 6px; }
+        .diary-panel .diary-sub { font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 14px; }
+        .diary-day { padding: 14px; border-radius: 12px; background: rgba(255,255,255,0.05); margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.07); }
+        .diary-day .d-date { font-size: 13px; font-weight: 700; color: var(--primary-soft); margin-bottom: 6px; }
+        .diary-day .d-summary { font-size: 12.5px; color: rgba(255,255,255,0.85); line-height: 1.7; }
+        .diary-day .d-list { font-size: 11.5px; color: rgba(255,255,255,0.65); line-height: 1.6; margin: 6px 0 0; padding-left: 18px; }
+        .diary-close {
+            float: right; background: rgba(255,255,255,0.1); border: none; color: #fff;
+            width: 28px; height: 28px; border-radius: 8px; cursor: pointer; font-size: 14px;
+        }
+
+        /* ---------- 心声 / 读心 / 反馈 ---------- */
+        .thought-block { display: flex; flex-direction: column; gap: 4px; margin-bottom: 2px; }
+        .thought-line { display: flex; gap: 6px; align-items: flex-start; }
+        .thought-icon { flex-shrink: 0; }
+        .thought-text { font-size: 12px; font-style: italic; color: #7c6dfc; line-height: 1.5; }
+        .read-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+        .read-chip { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; background: rgba(91,124,255,0.1); color: #5b7cff; border: 1px solid rgba(91,124,255,0.18); }
+        .read-chip.mood { background: rgba(183,148,246,0.12); color: #8b5cf6; border-color: rgba(183,148,246,0.25); }
+        .feedback-line { font-size: 11px; color: #16a34a; padding: 0 4px; margin-top: 2px; }
+        .feedback-line.down { color: #dc2626; }
+
+        /* ---------- 顶部浮动提示 ---------- */
+        .toast-wrap { position: fixed; top: 18px; left: 50%; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
+        .toast { padding: 10px 18px; border-radius: 14px; font-size: 13px; color: #fff; box-shadow: 0 8px 24px rgba(0,0,0,0.28); background: rgba(15,20,41,0.92); animation: toastIn 0.3s ease, toastOut 0.4s ease 2.6s forwards; max-width: 80vw; }
+        .toast.up { background: linear-gradient(135deg, rgba(22,163,74,0.95), rgba(16,185,129,0.95)); }
+        .toast.down { background: linear-gradient(135deg, rgba(220,38,38,0.95), rgba(244,63,94,0.95)); }
+        .toast.milestone { background: linear-gradient(135deg, rgba(124,109,252,0.95), rgba(183,148,246,0.95)); font-weight: 600; padding: 12px 22px; font-size: 14px; }
+        @keyframes toastIn { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes toastOut { to { opacity: 0; transform: translateY(-12px); } }
+
+        /* ---------- 头部工具 / 记忆卡 ---------- */
+        .toggle-btn { padding: 5px 10px; border-radius: 999px; font-size: 11px; cursor: pointer; border: 1px solid rgba(148,163,184,0.3); background: rgba(255,255,255,0.6); color: var(--text-muted); transition: all 0.2s; }
+        .toggle-btn.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+        .memory-btn { width: 100%; margin-top: 8px; padding: 10px; border-radius: 14px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.16); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+        .memory-btn:hover { background: rgba(255,255,255,0.16); }
+        .memory-section { margin-bottom: 16px; }
+        .memory-section h4 { font-size: 12px; color: rgba(255,255,255,0.55); margin-bottom: 8px; letter-spacing: 1px; }
+        .memory-profile { font-size: 13px; color: rgba(255,255,255,0.88); line-height: 1.8; }
+        .memory-facts { display: flex; flex-wrap: wrap; gap: 6px; }
+        .memory-fact { font-size: 12px; padding: 5px 10px; border-radius: 10px; background: rgba(91,124,255,0.14); color: var(--primary-soft); border: 1px solid rgba(91,124,255,0.2); }
+        .memory-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+        .memory-meta .chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85); }
+
+        /* ---------- 话题卡 / 成就墙 ---------- */
+        .quick-row { display: flex; align-items: center; gap: 8px; padding: 0 2px 8px; flex-wrap: wrap; }
+        .quick-row:empty { display: none; }
+        .topic-chip {
+            display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px; font-size: 12.5px;
+            cursor: pointer; border: 1px dashed rgba(91,124,255,0.4); background: rgba(91,124,255,0.06); color: #5b7cff; transition: all 0.2s;
+        }
+        .topic-chip:hover { background: rgba(91,124,255,0.14); }
+        .topic-refresh { padding: 6px 10px; border-radius: 999px; font-size: 11px; cursor: pointer; border: 1px solid rgba(148,163,184,0.25); background: rgba(255,255,255,0.6); color: var(--text-muted); }
+        .topic-refresh:hover { color: var(--primary); border-color: var(--primary-soft); }
+        .sidebar-icon-btn {
+            width: 100%; margin-top: 8px; padding: 8px 0; background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: rgba(255,255,255,0.65);
+            font-size: 12px; cursor: pointer; letter-spacing: 1px; transition: all 0.2s;
+        }
+        .sidebar-icon-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+        .achievement-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+        .achievement-item { padding: 14px; border-radius: 12px; text-align: center; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.07); }
+        .achievement-item .a-emoji { font-size: 26px; }
+        .achievement-item .a-label { font-size: 13px; font-weight: 700; margin-top: 6px; color: #fff; }
+        .achievement-item .a-desc { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 4px; line-height: 1.5; }
+        .achievement-item.locked { opacity: 0.45; filter: grayscale(0.85); }
+        .achievement-item.unlocked { border-color: rgba(183,148,246,0.5); background: rgba(183,148,246,0.12); }
+        .diary-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
+        .diary-tag { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; background: rgba(91,124,255,0.14); color: var(--primary-soft); }
+        .diary-favor { font-size: 11px; color: rgba(255,255,255,0.55); margin-top: 8px; }
 
         /* 滚动条 */
-        .messages-container::-webkit-scrollbar { width: 5px; }
+        .messages-container::-webkit-scrollbar { width: 6px; }
         .messages-container::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.35); border-radius: 3px; }
 
-        @media (max-width: 1100px) { .character-panel { display: none; } }
+        /* ============================================================
+           放大模式: 整体增大字号与组件尺寸(覆盖上方默认值, 便于阅读)
+           ============================================================ */
+        :root { --sidebar-width: 364px; }
+        /* 侧栏 */
+        .brand { font-size: 18px; }
+        .char-label { font-size: 12.5px; }
+        .cs-item { padding: 11px 12px; font-size: 16px; }
+        .cs-avatar { width: 58px; height: 58px; }
+        .cs-name { font-size: 16px; }
+        .cs-status { font-size: 11.5px; padding: 2px 8px; }
+        .cs-favor { font-size: 13px; }
+        .unread-badge { min-width: 21px; height: 21px; border-radius: 11px; font-size: 12px; }
+        .sidebar-foot { font-size: 12.5px; }
+        .world-date { font-size: 14px; }
+        .world-time { font-size: 14px; }
+        .world-day { font-size: 12px; }
+        .tag-mini { font-size: 12px; padding: 3px 9px; }
+        .life-title { font-size: 12px; }
+        .life-item { font-size: 13px; }
+        .life-status { font-size: 11.5px; }
+        .life-event { font-size: 12px; }
+        .nickname-input { font-size: 14px; padding: 9px 12px; }
+        .nickname-save { font-size: 13px; }
+        .schedule-title { font-size: 12.5px; }
+        .schedule-item { font-size: 12.5px; }
+        .schedule-item .s-time { width: 92px; }
+        .reset-btn { font-size: 13px; padding: 10px 0; }
+        .sidebar-icon-btn { font-size: 13px; padding: 10px 0; }
+        /* 聊天面板 */
+        .chat-title { font-size: 17px; }
+        .chat-favor { font-size: 13px; }
+        .empty { font-size: 15px; }
+        .message { gap: 13px; }
+        .avatar { width: 46px; height: 46px; font-size: 18px; }
+        .message-bubble { font-size: 16.5px; padding: 13px 17px; }
+        .message-time { font-size: 12px; }
+        .input-wrapper { padding: 7px 7px 7px 18px; border-radius: 24px; }
+        .input-wrapper input { font-size: 16px; }
+        .send-btn { width: 46px; height: 46px; border-radius: 15px; font-size: 22px; }
+        /* 角色卡 */
+        .character-panel { width: 440px; min-width: 440px; }
+        .character-names h2 { font-size: 22px; }
+        .character-names p { font-size: 12.5px; }
+        .tag { font-size: 12px; padding: 5px 10px; }
+        .character-desc { font-size: 14px; }
+        .favor-card .row { font-size: 13.5px; }
+        .quote-box { font-size: 13px; }
+        .diary-btn { font-size: 15px; padding: 12px; }
+        .memory-btn { font-size: 15px; padding: 12px; }
+        /* 心声 / 反馈 */
+        .thought-text { font-size: 13.5px; }
+        .read-chip { font-size: 12px; }
+        .feedback-line { font-size: 12.5px; }
+        /* 顶部浮动提示 */
+        .toast { font-size: 15px; padding: 12px 20px; }
+        .toast.milestone { font-size: 16px; padding: 14px 24px; }
+        /* 头部工具 / 记忆卡 */
+        .toggle-btn { font-size: 12.5px; padding: 6px 12px; }
+        .memory-section h4 { font-size: 13.5px; }
+        .memory-profile { font-size: 15px; }
+        .memory-fact { font-size: 13.5px; }
+        .memory-meta .chip { font-size: 13.5px; }
+        /* 话题卡 / 成就墙 */
+        .topic-chip { font-size: 14px; padding: 8px 14px; }
+        .topic-refresh { font-size: 12.5px; padding: 7px 12px; }
+        .achievement-item .a-emoji { font-size: 30px; }
+        .achievement-item .a-label { font-size: 15px; }
+        .achievement-item .a-desc { font-size: 12.5px; }
+        /* 弹窗 */
+        .diary-panel h3 { font-size: 18px; }
+        .diary-panel .diary-sub { font-size: 12.5px; }
+        .diary-day .d-date { font-size: 15px; }
+        .diary-day .d-summary { font-size: 14px; }
+        .diary-day .d-list { font-size: 13px; }
+        .diary-close { width: 32px; height: 32px; font-size: 16px; }
+        .diary-tag { font-size: 12px; }
+        .diary-favor { font-size: 12.5px; }
+
+        @media (max-width: 1180px) { .character-panel { display: none; } }
         @media (max-width: 768px) {
             .sidebar { display: none; }
             .chat-panel { border-radius: 0; margin: 0; min-width: auto; background: rgba(255,255,255,0.92); }
@@ -248,7 +462,17 @@
         <div class="character-switcher" id="switcher"></div>
         <div class="sidebar-foot">
             <div class="world-date" id="worldDate">—</div>
+            <div class="world-time" id="worldTime">—</div>
+            <div class="world-day" id="worldDay">—</div>
             <div class="world-tags" id="worldTags"></div>
+            <div class="life-title" id="lifeTitle">世界动态</div>
+            <div class="life-feed" id="lifeFeed"></div>
+            <div class="nickname-row">
+                <input class="nickname-input" id="nicknameInput" placeholder="你的昵称（她会这样叫你）" maxlength="20">
+                <button class="nickname-save" id="nicknameSave">保存</button>
+            </div>
+            <button class="sidebar-icon-btn" id="notifyBtn">🔔 桌面通知</button>
+            <button class="sidebar-icon-btn" id="achieveBtn">🎖 成就图鉴</button>
             <button class="reset-btn" id="resetBtn">初始化所有角色</button>
         </div>
     </aside>
@@ -263,12 +487,14 @@
                 <div class="chat-header">
                     <div class="chat-title"><span class="dot"></span><span id="chatTitle">—</span></div>
                     <div class="chat-favor">
+                        <button class="toggle-btn on" id="thoughtToggle" title="显示 / 隐藏角色的内心独白">💭 心声</button>
                         <span id="chatFavorText">—</span>
                         <div class="favor-bar"><i id="chatFavorBar" style="width:0%"></i></div>
                     </div>
                 </div>
                 <div class="messages-container" id="messages"></div>
                 <div class="input-area">
+                    <div class="quick-row" id="topicRow"></div>
                     <div class="input-wrapper">
                         <input id="input" placeholder="说点什么…（Enter 发送）" autofocus>
                         <button class="send-btn" id="sendBtn" title="发送">↑</button>
@@ -283,6 +509,7 @@
                     <div class="character-names">
                         <h2 id="cardName">—</h2>
                         <p id="cardEn">—</p>
+                        <p class="card-status" id="cardStatus">—</p>
                     </div>
                     <div class="character-tags" id="cardTags"></div>
                     <p class="character-desc" id="cardDesc">—</p>
@@ -290,12 +517,51 @@
                         <div class="row"><span class="label">好感度</span><span class="value" id="cardFavorValue">—</span></div>
                         <div class="bar"><i id="cardFavorBar" style="width:0%"></i></div>
                     </div>
+                    <div class="schedule-card">
+                        <div class="schedule-title">今日行程</div>
+                        <div class="schedule-list" id="scheduleList"></div>
+                    </div>
                     <div class="quote-box" id="cardQuote">—</div>
+                    <button class="diary-btn" id="diaryBtn">回忆日记</button>
+                    <button class="memory-btn" id="memoryBtn">她眼中的你</button>
                 </div>
             </div>
         </div>
     </main>
 </div>
+
+<!-- 回忆日记弹窗 -->
+<div class="diary-modal" id="diaryModal">
+    <div class="diary-panel">
+        <button class="diary-close" id="diaryClose">✕</button>
+        <h3 id="diaryTitle">回忆日记</h3>
+        <div class="diary-sub" id="diarySub">—</div>
+        <div id="diaryBody"></div>
+    </div>
+</div>
+
+<!-- 她眼中的你 · 记忆卡弹窗 -->
+<div class="diary-modal" id="memoryModal">
+    <div class="diary-panel">
+        <button class="diary-close" id="memoryClose">✕</button>
+        <h3 id="memoryTitle">她眼中的你</h3>
+        <div class="diary-sub" id="memorySub">—</div>
+        <div id="memoryBody"></div>
+    </div>
+</div>
+
+<!-- 成就图鉴弹窗 -->
+<div class="diary-modal" id="achieveModal">
+    <div class="diary-panel">
+        <button class="diary-close" id="achieveClose">✕</button>
+        <h3>🎖 成就图鉴</h3>
+        <div class="diary-sub">记录你和角色的每一个特别时刻</div>
+        <div class="achievement-grid" id="achieveGrid"></div>
+    </div>
+</div>
+
+<!-- 顶部浮动提示 -->
+<div class="toast-wrap" id="toastWrap"></div>
 
 <script>
 (function () {
@@ -323,10 +589,16 @@
         npc_03: { sidebar: '#1a2429', primary: '#6a9cb0', soft: '#9cc4d4', accent: '#b0a0c0', user: 'linear-gradient(135deg,#6a9cb0,#8a9ec0)' }
     };
 
-    var state = { agents: [], currentId: null, conversations: {}, world: null, streaming: false, unread: {} };
+    var state = { agents: [], currentId: null, conversations: {}, world: null, streaming: false, unread: {}, showThought: true, notify: false, topics: [], topicAgent: null, topicIdx: 0, topicLoadedAt: 0, achievements: [], knownAchievements: {} };
 
     var $ = function (id) { return document.getElementById(id); };
     var messagesBox = $('messages'), switcher = $('switcher'), input = $('input'), sendBtn = $('sendBtn');
+    var diaryBtn = $('diaryBtn'), diaryModal = $('diaryModal'), diaryBody = $('diaryBody');
+    var memoryBtn = $('memoryBtn'), memoryModal = $('memoryModal'), memoryBody = $('memoryBody');
+    var thoughtToggle = $('thoughtToggle'), toastWrap = $('toastWrap');
+    var topicRow = $('topicRow');
+    var achieveBtn = $('achieveBtn'), achieveModal = $('achieveModal'), achieveGrid = $('achieveGrid');
+    var notifyBtn = $('notifyBtn'), nicknameInput = $('nicknameInput'), nicknameSave = $('nicknameSave');
 
     function api(url, opts) {
         return fetch(url, opts).then(function (r) {
@@ -360,20 +632,60 @@
         if (!state.world) return;
         var d = state.world.today || '', wd = state.world.weekday || '';
         $('worldDate').textContent = d ? (d.replace(/-/g, '/') + ' · ' + wd) : '—';
+        $('worldTime').textContent = state.world.now ? (state.world.now + ' · ' + (state.world.period || '')) : '—';
+        $('worldDay').textContent = '世界第 ' + (state.world.days_elapsed != null ? state.world.days_elapsed : 0) + ' 天';
         var tags = $('worldTags'); tags.innerHTML = '';
         (state.world.festivals || []).forEach(function (f) {
             var s = document.createElement('span'); s.className = 'tag-mini'; s.textContent = f; tags.appendChild(s);
+        });
+        // 世界动态: 旁白时间轴 + 每个角色此刻在做什么 + 今天/最近发生的事
+        var feed = $('lifeFeed'); feed.innerHTML = '';
+        (state.world.events || []).slice().reverse().slice(0, 2).forEach(function (e) {
+            var el = document.createElement('div'); el.className = 'life-event nar';
+            el.textContent = e.content || '';
+            feed.appendChild(el);
+        });
+        (state.world.npcs || []).forEach(function (n) {
+            var line = document.createElement('div'); line.className = 'life-item';
+            var nameSpan = document.createElement('span'); nameSpan.textContent = n.name;
+            var stSpan = document.createElement('span'); stSpan.className = 'life-status' + (n.busy ? ' busy' : '');
+            stSpan.textContent = n.status || '空闲';
+            line.appendChild(nameSpan); line.appendChild(stSpan);
+            feed.appendChild(line);
+            (n.events || []).slice(0, 1).forEach(function (e) {
+                var el = document.createElement('div'); el.className = 'life-event';
+                var day = (e.date === d) ? '今天' : ((e.date || '').slice(5) || '');
+                el.textContent = '↳ ' + (day ? day + ' ' : '') + (e.text || '');
+                feed.appendChild(el);
+            });
         });
     }
     function loadWorld() {
         api('/world').then(function (data) { state.world = data; renderWorld(); }).catch(function () {});
     }
+    function notifyAgent(id) {
+        var name = id;
+        state.agents.forEach(function (x) { if (x.id === id) name = x.name; });
+        api('/agents/' + id + '/inbox').then(function (data) {
+            var unread = (data.messages || []).filter(function (m) { return !m.read; });
+            if (!unread.length) return;
+            var last = unread[unread.length - 1];
+            var n = new Notification(name + ' 发来消息', { body: last.content || '', tag: id + '-' + last.id });
+            setTimeout(function () { n.close(); }, 6000);
+        }).catch(function () {});
+    }
     function loadInbox() {
         api('/inbox').then(function (data) {
             var map = {};
             (data.agents || []).forEach(function (a) { map[a.id] = a.unread || 0; });
+            var prev = state.unread || {};
             state.unread = map;
             renderSwitcher();
+            if (state.notify && window.Notification && Notification.permission === 'granted') {
+                Object.keys(map).forEach(function (id) {
+                    if (map[id] > (prev[id] || 0)) notifyAgent(id);
+                });
+            }
         }).catch(function () {});
     }
 
@@ -392,6 +704,11 @@
 
             var meta = document.createElement('div'); meta.className = 'cs-meta';
             var name = document.createElement('div'); name.className = 'cs-name'; name.textContent = a.name;
+            if (a.status) {
+                var st = document.createElement('span'); st.className = 'cs-status' + (a.busy ? ' busy' : '');
+                st.textContent = a.status;
+                name.appendChild(st);
+            }
             var favor = document.createElement('div'); favor.className = 'cs-favor';
             favor.textContent = '好感度 ' + (a.favorability || 0) + ' · ' + favorStage(a.favorability || 0) + ' · ' + (a.mood || '平静');
             meta.appendChild(name); meta.appendChild(favor);
@@ -420,13 +737,260 @@
         $('cardImg').src = v.card;
         $('cardName').textContent = a.name;
         $('cardEn').textContent = v.en;
+        $('cardStatus').textContent = '此刻 · ' + (a.status || '空闲') + (a.activity ? '（' + a.activity + '）' : '')
+            + (a.tension_label && a.tension_label !== '正常' ? ' · 对你' + a.tension_label : '');
         $('cardDesc').textContent = a.description || '';
-        $('cardQuote').textContent = '“' + v.quote + '”';
+        $('cardQuote').textContent = '“' + (a.quote || v.quote) + '”';
         $('cardFavorValue').textContent = f + ' / 100 · ' + favorStage(f) + ' · ' + (a.mood || '平静');
         $('cardFavorBar').style.width = f + '%';
         var tags = $('cardTags'); tags.innerHTML = '';
         v.tags.forEach(function (t) {
             var s = document.createElement('span'); s.className = 'tag'; s.textContent = t; tags.appendChild(s);
+        });
+    }
+
+    // ---------- 回忆日记 ----------
+    async function openDiary() {
+        var a = curAgent(); if (!a) return;
+        diaryModal.classList.add('open');
+        $('diaryTitle').textContent = '与 ' + a.name + ' 的回忆';
+        $('diarySub').textContent = '每一天，我们都一起经历过什么';
+        diaryBody.innerHTML = '<div class="diary-sub">加载中…</div>';
+        try {
+            var data = await api('/agents/' + a.id + '/diary');
+            var diary = data.diary || [];
+            diaryBody.innerHTML = '';
+            if (diary.length === 0) {
+                diaryBody.innerHTML = '<div class="diary-sub">还没有沉淀下来的回忆，多聊聊吧。</div>';
+                return;
+            }
+            diary.slice().reverse().forEach(function (d) {
+                var day = document.createElement('div'); day.className = 'diary-day';
+                var date = document.createElement('div'); date.className = 'd-date'; date.textContent = d.date;
+                var summary = document.createElement('div'); summary.className = 'd-summary'; summary.textContent = d.summary || '';
+                day.appendChild(date); day.appendChild(summary);
+                var hl = d.highlights || [];
+                if (hl.length > 0) {
+                    var h = document.createElement('ul'); h.className = 'd-list';
+                    hl.forEach(function (x) { var li = document.createElement('li'); li.textContent = '「' + x + '」'; h.appendChild(li); });
+                    day.appendChild(h);
+                }
+                var nd = d.new_understandings || [];
+                if (nd.length > 0) {
+                    var n = document.createElement('ul'); n.className = 'd-list';
+                    nd.forEach(function (x) { var li = document.createElement('li'); li.textContent = '我逐渐了解：' + x; n.appendChild(li); });
+                    day.appendChild(n);
+                }
+                var tg = d.tags || [];
+                if (tg.length > 0) {
+                    var tagsBox = document.createElement('div'); tagsBox.className = 'diary-tags';
+                    tg.forEach(function (t) {
+                        var s = document.createElement('span'); s.className = 'diary-tag'; s.textContent = t;
+                        tagsBox.appendChild(s);
+                    });
+                    day.appendChild(tagsBox);
+                }
+                if (d.favorability !== undefined && d.favorability !== null) {
+                    var fv = document.createElement('div'); fv.className = 'diary-favor';
+                    fv.textContent = '当天好感度 ' + d.favorability + (d.mood ? ' · 心情 ' + d.mood : '');
+                    day.appendChild(fv);
+                }
+                diaryBody.appendChild(day);
+            });
+        } catch (e) {
+            diaryBody.innerHTML = '<div class="diary-sub">加载失败：' + e.message + '</div>';
+        }
+    }
+
+    // ---------- 她眼中的你 · 记忆卡 ----------
+    async function openMemory() {
+        var a = curAgent(); if (!a) return;
+        memoryModal.classList.add('open');
+        $('memoryTitle').textContent = '她眼中的你';
+        $('memorySub').textContent = '在 ' + a.name + ' 心里，你是这样的';
+        memoryBody.innerHTML = '<div class="diary-sub">加载中…</div>';
+        try {
+            var data = await api('/agents/' + a.id + '/memory');
+            var chips = [];
+            if (data.stage) chips.push({ label: '关系', value: data.stage + ' · ' + (data.favorability || 0) + '/100' });
+            if (data.mood) chips.push({ label: '她此刻', value: data.mood });
+            var meta = document.createElement('div'); meta.className = 'memory-meta';
+            chips.forEach(function (c) {
+                var s = document.createElement('span'); s.className = 'chip';
+                s.textContent = c.label + ' · ' + c.value; meta.appendChild(s);
+            });
+            memoryBody.innerHTML = '';
+            memoryBody.appendChild(meta);
+
+            var sec1 = document.createElement('div'); sec1.className = 'memory-section';
+            var h1 = document.createElement('h4'); h1.textContent = '她对你的印象';
+            var p = document.createElement('div'); p.className = 'memory-profile';
+            p.textContent = (data.profile && data.profile.trim()) ? data.profile : '她还在慢慢了解你，多聊聊吧。';
+            sec1.appendChild(h1); sec1.appendChild(p);
+            memoryBody.appendChild(sec1);
+
+            var sec2 = document.createElement('div'); sec2.className = 'memory-section';
+            var h2 = document.createElement('h4'); h2.textContent = '她记住的关于你的事';
+            var facts = document.createElement('div'); facts.className = 'memory-facts';
+            var list = data.facts || [];
+            if (list.length === 0) {
+                facts.innerHTML = '<div class="diary-sub">还没有沉淀下来的了解，多聊聊吧。</div>';
+            } else {
+                list.forEach(function (f) {
+                    var t = document.createElement('span'); t.className = 'memory-fact'; t.textContent = f;
+                    facts.appendChild(t);
+                });
+            }
+            sec2.appendChild(h2); sec2.appendChild(facts);
+            memoryBody.appendChild(sec2);
+        } catch (e) {
+            memoryBody.innerHTML = '<div class="diary-sub">加载失败：' + e.message + '</div>';
+        }
+    }
+
+    // ---------- 心声 / 反馈 渲染 ----------
+    function thoughtBlock(m) {
+        if (!state.showThought) return null;
+        var hasThought = m.thought;
+        var read = m.read || {};
+        var hasRead = read.emotion || read.intent || read.topic;
+        var hasMood = typeof m.moodShift === 'number' && m.moodShift !== 0;
+        if (!hasThought && !hasRead && !hasMood) return null;
+        var box = document.createElement('div'); box.className = 'thought-block';
+        if (hasThought) {
+            var line = document.createElement('div'); line.className = 'thought-line';
+            var icon = document.createElement('span'); icon.className = 'thought-icon'; icon.textContent = '💭';
+            var txt = document.createElement('span'); txt.className = 'thought-text'; txt.textContent = m.thought;
+            line.appendChild(icon); line.appendChild(txt);
+            box.appendChild(line);
+        }
+        if (hasRead) {
+            var chips = document.createElement('div'); chips.className = 'read-chips';
+            [['察觉', read.emotion], ['意图', read.intent], ['话题', read.topic]].forEach(function (pair) {
+                if (!pair[1]) return;
+                var c = document.createElement('span'); c.className = 'read-chip';
+                c.textContent = pair[0] + ' · ' + pair[1]; chips.appendChild(c);
+            });
+            box.appendChild(chips);
+        }
+        if (hasMood) {
+            var moodChips = document.createElement('div'); moodChips.className = 'read-chips';
+            var c = document.createElement('span'); c.className = 'read-chip mood';
+            c.textContent = '心情 ' + (m.moodShift > 0 ? '↑' : '↓') + Math.abs(m.moodShift);
+            moodChips.appendChild(c);
+            box.appendChild(moodChips);
+        }
+        return box;
+    }
+
+    function feedbackLine(m) {
+        var hasDelta = typeof m.favorDelta === 'number' && m.favorDelta !== 0;
+        if (!hasDelta && !m.favorReason) return null;
+        var d = document.createElement('div');
+        d.className = 'feedback-line' + (m.favorDelta < 0 ? ' down' : '');
+        var txt = '';
+        if (hasDelta) txt += '好感度 ' + (m.favorDelta > 0 ? '+' : '') + m.favorDelta;
+        if (m.favorReason) txt += (txt ? ' · ' : '') + m.favorReason;
+        d.textContent = txt;
+        return d;
+    }
+
+    function showToast(text, kind) {
+        if (!text) return;
+        var t = document.createElement('div');
+        t.className = 'toast' + (kind ? ' ' + kind : '');
+        t.textContent = text;
+        toastWrap.appendChild(t);
+        setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 3200);
+    }
+
+    function applyFavorFeedback(data) {
+        var a = curAgent(); if (!a) return;
+        if (data.favorability !== undefined) a.favorability = data.favorability;
+        if (data.mood !== undefined) a.mood = data.mood;
+        renderSwitcher(); renderPanels();
+        var txt = '';
+        if (data.delta) txt += '好感度 ' + (data.delta > 0 ? '+' : '') + data.delta;
+        if (data.reason) txt += (txt ? ' · ' : '') + data.reason;
+        if (txt) showToast(txt, data.delta > 0 ? 'up' : (data.delta < 0 ? 'down' : ''));
+    }
+
+    function showMilestone(data) {
+        showToast('✨ 关系进阶：' + data.from + ' → ' + data.to, 'milestone');
+    }
+
+    // ---------- 话题开场卡 ----------
+    var TOPIC_TTL = 5 * 60 * 1000;  // 本地话题池有效期(与服务端缓存一致)
+    var TOPIC_PAGE = 3;             // 每次展示的话题条数
+    function loadTopics(force) {
+        if (!state.currentId) return;
+        // 本地话题池仍有效时, "换一批"直接轮换, 不发请求
+        var poolOk = state.topicAgent === state.currentId && state.topics.length > TOPIC_PAGE;
+        var fresh = Date.now() - state.topicLoadedAt <= TOPIC_TTL;
+        if (!force && poolOk && fresh) { nextTopics(); return; }
+        topicRow.innerHTML = '<span class="topic-chip" style="cursor:default;opacity:.6">想话题中…</span>';
+        api('/agents/' + state.currentId + '/topics').then(function (data) {
+            var list = data.topics || [];
+            // 轻微打乱顺序, 让每次刷新的话题顺序有新鲜感
+            for (var i = list.length - 1; i > 0; i--) {
+                var j = Math.floor(Math.random() * (i + 1));
+                var tmp = list[i]; list[i] = list[j]; list[j] = tmp;
+            }
+            state.topics = list;
+            state.topicAgent = state.currentId;
+            state.topicIdx = 0;
+            state.topicLoadedAt = Date.now();
+            renderTopics();
+        }).catch(function () { topicRow.innerHTML = ''; });
+    }
+    function nextTopics() {
+        // 全部轮换完或已过期则重新请求, 否则本地轮换一批(即时显示)
+        var expired = Date.now() - state.topicLoadedAt > TOPIC_TTL;
+        if (expired || state.topics.length <= TOPIC_PAGE) { loadTopics(true); return; }
+        state.topicIdx = (state.topicIdx + TOPIC_PAGE) % state.topics.length;
+        renderTopics();
+    }
+    function renderTopics() {
+        topicRow.innerHTML = '';
+        if (!state.topics.length) return;
+        state.topics.slice(state.topicIdx, state.topicIdx + TOPIC_PAGE).forEach(function (t) {
+            var c = document.createElement('span');
+            c.className = 'topic-chip';
+            c.textContent = t;
+            c.addEventListener('click', function () { input.value = t; input.focus(); updateComposer(); });
+            topicRow.appendChild(c);
+        });
+        var r = document.createElement('button');
+        r.className = 'topic-refresh';
+        r.textContent = '↻ 换一批';
+        r.addEventListener('click', function () { nextTopics(); });
+        topicRow.appendChild(r);
+    }
+
+    // ---------- 成就 ----------
+    function loadAchievements(first) {
+        api('/achievements').then(function (data) {
+            var list = data.achievements || [];
+            state.achievements = list;
+            renderAchievements();
+            list.forEach(function (a) {
+                if (a.unlocked && !state.knownAchievements[a.key]) {
+                    state.knownAchievements[a.key] = true;
+                    if (!first) showToast(a.emoji + ' 成就解锁：' + a.label, 'milestone');
+                }
+            });
+        }).catch(function () {});
+    }
+    function renderAchievements() {
+        achieveGrid.innerHTML = '';
+        state.achievements.forEach(function (a) {
+            var item = document.createElement('div');
+            item.className = 'achievement-item ' + (a.unlocked ? 'unlocked' : 'locked');
+            var e = document.createElement('div'); e.className = 'a-emoji'; e.textContent = a.unlocked ? a.emoji : '🔒';
+            var l = document.createElement('div'); l.className = 'a-label'; l.textContent = a.label;
+            var d = document.createElement('div'); d.className = 'a-desc'; d.textContent = a.desc;
+            item.appendChild(e); item.appendChild(l); item.appendChild(d);
+            achieveGrid.appendChild(item);
         });
     }
 
@@ -441,6 +1005,9 @@
             avatar.textContent = '我';
             avatar.style.background = 'linear-gradient(135deg,#94a3b8,#64748b)';
             avatar.style.color = '#fff';
+        } else if (m.delayed) {
+            avatar.textContent = '💤';
+            avatar.style.background = 'linear-gradient(135deg,#334155,#1e293b)';
         } else {
             var img = document.createElement('img'); img.src = v.avatar; img.alt = a ? a.name : '';
             img.onerror = function () { avatar.textContent = (a ? a.name : '?').charAt(0); avatar.style.color = '#fff'; avatar.style.background = 'linear-gradient(135deg,var(--primary),var(--accent))'; };
@@ -448,7 +1015,12 @@
         }
 
         var body = document.createElement('div'); body.className = 'message-body';
-        var bubble = document.createElement('div'); bubble.className = 'message-bubble';
+        if (m.role === 'assistant') {
+            var tb = thoughtBlock(m);
+            if (tb) body.appendChild(tb);
+        }
+        var bubble = document.createElement('div');
+        bubble.className = 'message-bubble' + (m.delayed ? ' delayed' : '');
         if (m.typing) {
             var dots = document.createElement('span'); dots.className = 'typing';
             dots.innerHTML = '<i></i><i></i><i></i>';
@@ -456,9 +1028,14 @@
         } else {
             bubble.textContent = m.content || '';
         }
+        body.appendChild(bubble);
+        if (m.role === 'assistant') {
+            var fb = feedbackLine(m);
+            if (fb) body.appendChild(fb);
+        }
         var time = document.createElement('div'); time.className = 'message-time';
-        time.textContent = (m.proactive ? '主动发来 · ' : '') + formatTime(Date.now());
-        body.appendChild(bubble); body.appendChild(time);
+        time.textContent = (m.delayed ? '延迟回复 · ' : (m.proactive ? '主动发来 · ' : '')) + formatTime(Date.now());
+        body.appendChild(time);
 
         row.appendChild(avatar); row.appendChild(body);
         return row;
@@ -500,12 +1077,17 @@
             } catch (e) { state.conversations[id].messages = []; }
             state.conversations[id].loaded = true;
         }
-        // 拉取主动消息: 展示未读的, 然后标记已读
+        // 拉取主动消息: 展示未读的(与历史去重), 然后标记已读
         try {
             var inbox = await api('/agents/' + id + '/inbox');
             var unreadMsgs = (inbox.messages || []).filter(function (m) { return !m.read; });
             if (unreadMsgs.length > 0) {
+                var seen = {};
+                state.conversations[id].messages.forEach(function (m) {
+                    if (m.role === 'assistant' && m.content) seen[m.content] = true;
+                });
                 unreadMsgs.forEach(function (m) {
+                    if (seen[m.content]) return; // 已在历史里出现过, 去重
                     state.conversations[id].messages.push({ role: 'assistant', content: m.content, proactive: true });
                 });
                 await api('/agents/' + id + '/inbox/read', { method: 'POST' });
@@ -513,6 +1095,29 @@
             }
         } catch (e) {}
         if (state.currentId === id) renderMessages();
+        loadTopics();
+        loadSchedule(id);
+    }
+
+    // ---------- 今日行程 ----------
+    function loadSchedule(id) {
+        api('/agents/' + id + '/schedule').then(function (data) {
+            renderSchedule(data.schedule || []);
+        }).catch(function () { $('scheduleList').innerHTML = ''; });
+    }
+    function renderSchedule(list) {
+        var box = $('scheduleList'); box.innerHTML = '';
+        if (!list.length) { box.innerHTML = '<div class="life-event">暂无行程</div>'; return; }
+        list.forEach(function (s) {
+            var it = document.createElement('div');
+            it.className = 'schedule-item' + (s.current ? ' current' : '');
+            var dot = document.createElement('span'); dot.className = 's-dot';
+            var time = document.createElement('span'); time.className = 's-time'; time.textContent = s.time;
+            var label = document.createElement('span'); label.className = 's-label';
+            label.textContent = s.label + (s.activity && s.activity !== s.label ? ' · ' + s.activity : '');
+            it.appendChild(dot); it.appendChild(time); it.appendChild(label);
+            box.appendChild(it);
+        });
     }
 
     // ---------- 发送 ----------
@@ -531,7 +1136,24 @@
         state.streaming = true;
         updateComposer();
         renderMessages();
-        var bubbleEl = messagesBox.lastElementChild ? messagesBox.lastElementChild.querySelector('.message-bubble') : null;
+        var assistantRow = messagesBox.lastElementChild;
+        var bubbleEl = assistantRow ? assistantRow.querySelector('.message-bubble') : null;
+
+        // 按当前状态重建该条回复的结构(心声 → 气泡 → 反馈 → 时间), 复用已有气泡/时间元素
+        function refreshAssistant() {
+            if (!assistantRow) return;
+            var body = assistantRow.querySelector('.message-body');
+            var bubble = assistantRow.querySelector('.message-bubble');
+            var time = assistantRow.querySelector('.message-time');
+            if (!body || !bubble || !time) return;
+            while (body.firstChild) body.removeChild(body.firstChild);
+            var tb = thoughtBlock(assistantMsg);
+            if (tb) body.appendChild(tb);
+            body.appendChild(bubble);
+            var fb = feedbackLine(assistantMsg);
+            if (fb) body.appendChild(fb);
+            body.appendChild(time);
+        }
 
         try {
             var resp = await fetch('/chat', {
@@ -547,16 +1169,67 @@
                 var lines = buffer.split('\n'); buffer = lines.pop() || '';
                 for (var i = 0; i < lines.length; i++) {
                     if (lines[i].indexOf('data: ') !== 0) continue;
-                    try {
-                        var data = JSON.parse(lines[i].slice(6));
-                        if (data.done) continue;
-                        if (data.content !== undefined) {
-                            if (assistantMsg.typing) { assistantMsg.typing = false; if (bubbleEl) bubbleEl.textContent = ''; }
-                            assistantMsg.content += data.content;
-                            if (bubbleEl) bubbleEl.textContent = assistantMsg.content;
-                            scrollToBottom();
-                        }
-                    } catch (e) {}
+                    var data = null;
+                    try { data = JSON.parse(lines[i].slice(6)); } catch (e) {}
+                    if (!data) continue;
+                    if (data.type === 'done') continue;
+                    if (data.type === 'cognition') {
+                        var d = data.data || {};
+                        assistantMsg.thought = d.internal_thought || '';
+                        assistantMsg.read = { emotion: d.user_emotion, intent: d.user_intent, topic: d.topic };
+                        assistantMsg.moodShift = Number(d.mood_shift) || 0;
+                        refreshAssistant();
+                        continue;
+                    }
+                    if (data.type === 'content') {
+                        if (assistantMsg.typing) { assistantMsg.typing = false; if (bubbleEl) bubbleEl.textContent = ''; }
+                        assistantMsg.content += data.data || '';
+                        if (bubbleEl) bubbleEl.textContent = assistantMsg.content;
+                        scrollToBottom();
+                        continue;
+                    }
+                    if (data.type === 'sleep') {
+                        var sd = data.data || {};
+                        assistantMsg.typing = false;
+                        assistantMsg.delayed = true;
+                        assistantMsg.content = sd.note || '她睡得很沉，明早会回复你。';
+                        renderMessages();
+                        showToast((sd.status || '睡觉中') + ' · 她明早会回复你', 'milestone');
+                        continue;
+                    }
+                    if (data.type === 'favor') {
+                        assistantMsg.favorDelta = (data.data || {}).delta || 0;
+                        assistantMsg.favorReason = (data.data || {}).reason || '';
+                        refreshAssistant();
+                        applyFavorFeedback(data.data || {});
+                        continue;
+                    }
+                    if (data.type === 'milestone') {
+                        showMilestone(data.data || {});
+                        continue;
+                    }
+                    if (data.type === 'milestone_story') {
+                        var ms = data.data || {};
+                        showToast('✨ ' + (ms.content || '关系更进一步了'), 'milestone');
+                        continue;
+                    }
+                    if (data.type === 'reconcile') {
+                        var rc = data.data || {};
+                        showToast('💞 和好了 · ' + (rc.content || ''), 'milestone');
+                        continue;
+                    }
+                    if (data.type === 'achievement') {
+                        var ad = data.data || {};
+                        state.knownAchievements[ad.key] = true;
+                        showToast(ad.emoji + ' 成就解锁：' + ad.label, 'milestone');
+                        continue;
+                    }
+                    if (data.type === 'error') {
+                        assistantMsg.content = assistantMsg.content || ('（' + (data.data || '出错了') + '）');
+                        assistantMsg.typing = false;
+                        if (bubbleEl) bubbleEl.textContent = assistantMsg.content;
+                        continue;
+                    }
                 }
             }
         } catch (e) {
@@ -570,6 +1243,7 @@
             scrollToBottom();
             // 好感度可能已变, 刷新角色信息
             refreshAgents();
+            loadAchievements(false);
         }
     }
 
@@ -594,6 +1268,49 @@
             alert('初始化失败：' + e.message);
         }
     });
+    diaryBtn.addEventListener('click', openDiary);
+    $('diaryClose').addEventListener('click', function () { diaryModal.classList.remove('open'); });
+    diaryModal.addEventListener('click', function (e) { if (e.target === diaryModal) diaryModal.classList.remove('open'); });
+    memoryBtn.addEventListener('click', openMemory);
+    $('memoryClose').addEventListener('click', function () { memoryModal.classList.remove('open'); });
+    memoryModal.addEventListener('click', function (e) { if (e.target === memoryModal) memoryModal.classList.remove('open'); });
+    thoughtToggle.addEventListener('click', function () {
+        state.showThought = !state.showThought;
+        thoughtToggle.classList.toggle('on', state.showThought);
+        renderMessages();
+    });
+    achieveBtn.addEventListener('click', function () { achieveModal.classList.add('open'); renderAchievements(); });
+    $('achieveClose').addEventListener('click', function () { achieveModal.classList.remove('open'); });
+    achieveModal.addEventListener('click', function (e) { if (e.target === achieveModal) achieveModal.classList.remove('open'); });
+
+    // ---------- 昵称 ----------
+    function loadNickname() {
+        api('/user').then(function (data) { nicknameInput.value = data.nickname || ''; }).catch(function () {});
+    }
+    nicknameSave.addEventListener('click', function () {
+        var name = nicknameInput.value.trim();
+        api('/user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nickname: name }) })
+            .then(function (data) { showToast('昵称已保存：' + (data.nickname || '（已清空）'), ''); })
+            .catch(function (e) { showToast('保存失败：' + e.message, 'down'); });
+    });
+    nicknameInput.addEventListener('keydown', function (e) { if (e.key === 'Enter') nicknameSave.click(); });
+
+    // ---------- 桌面通知 ----------
+    function renderNotifyBtn() { notifyBtn.classList.toggle('on', state.notify); }
+    notifyBtn.addEventListener('click', function () {
+        if (!('Notification' in window)) { showToast('当前浏览器不支持桌面通知', ''); return; }
+        if (Notification.permission === 'granted') {
+            state.notify = !state.notify;
+            renderNotifyBtn();
+            showToast(state.notify ? '桌面通知已开启' : '桌面通知已关闭', '');
+        } else {
+            Notification.requestPermission().then(function (perm) {
+                state.notify = (perm === 'granted');
+                renderNotifyBtn();
+                showToast(state.notify ? '桌面通知已开启' : '未授权，无法开启', 'down');
+            });
+        }
+    });
 
     // ---------- 启动 ----------
     async function init() {
@@ -610,6 +1327,11 @@
         setInterval(refreshAgents, 15 * 1000);
         loadInbox();
         setInterval(loadInbox, 30 * 1000);
+        loadAchievements(true);
+        setInterval(function () { loadAchievements(false); }, 30 * 1000);
+        loadNickname();
+        if (window.Notification && Notification.permission === 'granted') state.notify = true;
+        renderNotifyBtn();
     }
     init();
 })();

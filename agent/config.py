@@ -33,6 +33,9 @@ AGENTS_DIR = os.path.join(BASE_DIR, "agents")
 # 旁白(世界状态)持久化文件
 WORLD_STATE_FILE = os.path.join(BASE_DIR, "world.json")
 
+# 单用户档案(成就)持久化文件
+USER_FILE = os.path.join(BASE_DIR, "user.json")
+
 
 # ============================================================
 # 环境变量加载: 支持从项目根目录的 .env 读取配置(不覆盖已存在的环境变量)
@@ -124,13 +127,28 @@ MEMORY_W_SIMILARITY = 0.3
 # 情感显著性: 写入记忆时, 命中情绪/重要事件关键词的重要性加成(人脑对"有情绪的事"记得更牢)
 MEMORY_EMOTION_BONUS = 3
 
+# 话题联想扩展: 与已召回父块共享话题的其他父块加入候选(多跳式联想, 不增加最终注入条数)
+MEMORY_TOPIC_EXPAND = 3
+MEMORY_TOPIC_SIM_FLOOR = 0.4
+
+# ============================================================
+# 记忆去重(写入时): embedding 相似度分流, 仅"疑似相关"才调用小模型判断
+# 原则: 只消除"真重复"; 对"相似但有新信息"(时间/地点/状态变化)一律保历史合并, 绝不覆盖旧事实
+# ============================================================
+MEMORY_DEDUP_ENABLED = True    # 是否开启写入去重(关闭则退化为纯追加)
+MEMORY_DEDUP_HIGH = 0.93       # 相似度>=此值: 几乎一字不差的复述, 直接判"重复"(0 token)
+MEMORY_DEDUP_LOW = 0.60        # 相似度<=此值: 明显新事, 直接新增(0 token)
+MEMORY_DEDUP_TOPK = 3          # 每条新记忆去重时检索的最相似候选数
+
 # ============================================================
 # 记忆压缩参数
 # ============================================================
-MEMORY_UPDATE_THRESHOLD = 6   # 用户提问次数达到该值触发记忆更新+压缩
+MEMORY_UPDATE_THRESHOLD = 20  # 浅睡兜底轮数: 距上次压缩达到此轮数强制整理(即使话题未切换)
+MEMORY_SHIFT_MIN_TURNS = 4    # 主题漂移触发浅睡的最小间隔轮数(上一段话题至少聊这么多轮才结算)
 MEMORY_KEEP_TURNS = 4         # 压缩后保留最近对话轮数(过小会丢失近期语境)
-MEMORY_INPUT_MAX_TURNS = 20   # 提取记忆时最多取的消息条数
+MEMORY_INPUT_MAX_TURNS = 12   # 提取记忆时最多取的消息条数(降低单次压缩输入token)
 MEMORY_INPUT_MAX_CHARS = 4000 # 单条消息截断长度
+MEMORY_EXTRACT_MODEL = "qwen-turbo"  # 后台记忆整理(提取/人格重写)统一用便宜模型, 降低压缩成本
 
 # ============================================================
 # 结构化事实库(语义记忆): 关于用户的稳定事实/偏好/约定
@@ -175,6 +193,15 @@ COGNITION_HISTORY_TURNS = 6                       # 认知时回看的最近对�
 COGNITION_THOUGHT_MAX_CHARS = 60                  # 内心独白最大长度
 
 # ============================================================
+# 话题开场卡: 生成与缓存(输入栏上方的可点击开场话题)
+# - 一次性多生成几个, 前端本地分批轮换, "换一批"不再每次都打模型
+# - 生成结果带TTL缓存, 短时间内反复切换角色/刷新直接命中, 不再阻塞
+# ============================================================
+TOPIC_SUGGEST_COUNT = 9    # 每次生成的开场话题总数(前端每次展示3个, 轮换3批)
+TOPIC_CACHE_TTL = 300      # 开场卡缓存有效期(秒): 过期后才重新调用模型
+TOPIC_PREFETCH = True      # 服务启动时后台预生成各角色开场卡, 让首次加载也秒开
+
+# ============================================================
 # 遗忘机制(小模型驱动, 避免向量库只增不减)
 # 注意: 采用"软遗忘"——先标记为想不起来(不注入召回), 重要度极低时才物理删除
 # ============================================================
@@ -192,6 +219,183 @@ PROACTIVE_MIN_AWAY_DAYS = 1     # 至少离开N天才可能触发"想念"
 PROACTIVE_INTENT_THRESHOLD = 40 # 主动意愿阈值(好感度-时间衰减 >= 此值才主动)
 PROACTIVE_DECAY_PER_DAY = 5     # 每离开一天, 主动意愿降低的分数
 PROACTIVE_COOLDOWN_DAYS = 2     # 两次普通主动消息的最小间隔(天)
+CROSS_NPC_RELAY_PROBABILITY = 0.2  # 普通主动消息中"转述另一位角色近况"的概率
+
+# ============================================================
+# 深睡(隔夜整理): 晚上特定时间做"单天会话总结 + 深度去重 + 刷新短期聊天"
+# 惰性触发: 无定时器, 只在用户上线互动后检查; 无新互动则免做(角色"睡着")
+# ============================================================
+DREAM_ENABLED = True            # 是否开启隔夜整理(深睡)
+DREAM_MODEL = os.getenv("DREAM_MODEL", "qwen-turbo")  # 深睡总结用便宜模型
+DREAM_SLEEP_START = 21          # 睡眠窗口开始(小时)
+DREAM_SLEEP_END = 6             # 睡眠窗口结束(小时), 即 21:00 ~ 次日 06:00
+DREAM_IDLE_MINUTES = 30         # 距上次消息超过此分钟数视为"互动已结束", 才可整理(延后未结束的互动)
+DREAM_MAX_DELAY_DAYS = 2        # 超过此天数未整理则忽略睡眠窗口强制补做(防无限延后)
+DREAM_DAILY_LOG_NAME = "daily_log.json"  # 每个角色的"日历史"文件
+
+
+# ============================================================
+# 世界模拟: NPC 作息 + 低概率随机事件(不在场时的生命感)
+# - 每个NPC按小时有作息表, 决定其当前"状态"(上课/社团/值班/睡觉/空闲)
+# - 每天惰性地为每个角色掷一次随机事件(低概率), 影响心情并注入对话
+# - 用户离开期间世界照常运转: 回填错过的日子(最多 LIFE_BACKFILL_MAX_DAYS 天)
+# ============================================================
+LIFE_FILE_NAME = "life.json"     # 每个NPC的生活状态(每日随机事件)持久化文件
+RANDOM_EVENT_PROBABILITY = 0.25  # 每个角色每天触发随机事件的概率(0~1)
+LIFE_BACKFILL_MAX_DAYS = 7       # 用户离开后最多回填/模拟的天数(太久只模拟最近这几天)
+LIFE_EVENTS_KEEP = 30            # 每个角色保留的最近事件条数
+SLEEP_PENDING_MAX = 5            # 深夜睡着时最多积压几条待补回的消息
+
+# 作息表槽位: {start, end, activity, label, busy, sleepy?}
+# - start/end: 小时(0~24), end<=start 表示跨午夜
+# - activity: 正在做的事(注入对话, 如"在教室上课")
+# - label: 给前端展示的简短状态(如"上课中")
+# - busy: 是否在忙(忙时角色回复会自然说"晚点回你")
+# - sleepy: 是否在睡觉(深夜回复带睡意)
+NPC_SCHEDULES = {
+    "npc_01": [  # 星野璃: 计算机系学姐
+        {"start": 0, "end": 7, "activity": "在睡觉", "label": "睡觉中", "busy": True, "sleepy": True},
+        {"start": 7, "end": 8, "activity": "起床洗漱、吃早餐", "label": "准备出门", "busy": False},
+        {"start": 8, "end": 12, "activity": "在教室上课", "label": "上课中", "busy": True},
+        {"start": 12, "end": 14, "activity": "午休吃饭", "label": "午休中", "busy": False},
+        {"start": 14, "end": 17, "activity": "在实验室/教室上课", "label": "上课中", "busy": True},
+        {"start": 17, "end": 19, "activity": "在社团写代码", "label": "社团活动中", "busy": True},
+        {"start": 19, "end": 22, "activity": "在宿舍放松、打游戏", "label": "空闲", "busy": False},
+        {"start": 22, "end": 24, "activity": "在睡觉", "label": "睡觉中", "busy": True, "sleepy": True},
+    ],
+    "npc_02": [  # 苏晚柠: 文学院社长
+        {"start": 0, "end": 7, "activity": "在睡觉", "label": "睡觉中", "busy": True, "sleepy": True},
+        {"start": 7, "end": 8, "activity": "起床、晨读", "label": "准备出门", "busy": False},
+        {"start": 8, "end": 12, "activity": "在教室上课", "label": "上课中", "busy": True},
+        {"start": 12, "end": 14, "activity": "午休、在图书馆看书", "label": "午休中", "busy": False},
+        {"start": 14, "end": 17, "activity": "在图书馆自习", "label": "自习中", "busy": True},
+        {"start": 17, "end": 19, "activity": "在文学社活动", "label": "社团活动中", "busy": True},
+        {"start": 19, "end": 22, "activity": "在宿舍看书、写随笔", "label": "空闲", "busy": False},
+        {"start": 22, "end": 24, "activity": "在睡觉", "label": "睡觉中", "busy": True, "sleepy": True},
+    ],
+    "npc_03": [  # 白河祈: 巫女学姐
+        {"start": 0, "end": 6, "activity": "在睡觉", "label": "睡觉中", "busy": True, "sleepy": True},
+        {"start": 6, "end": 7, "activity": "起床做晨间祈祷", "label": "晨祷中", "busy": True},
+        {"start": 7, "end": 8, "activity": "吃早餐、准备上学", "label": "准备出门", "busy": False},
+        {"start": 8, "end": 12, "activity": "在教室上课", "label": "上课中", "busy": True},
+        {"start": 12, "end": 14, "activity": "午休、在神社帮忙", "label": "午休中", "busy": False},
+        {"start": 14, "end": 17, "activity": "在神社值班", "label": "神社值班中", "busy": True},
+        {"start": 17, "end": 19, "activity": "在巫女修行/弓道", "label": "修行中", "busy": True},
+        {"start": 19, "end": 22, "activity": "在宿舍读书、做御守", "label": "空闲", "busy": False},
+        {"start": 22, "end": 24, "activity": "在睡觉", "label": "睡觉中", "busy": True, "sleepy": True},
+    ],
+}
+
+DEFAULT_SCHEDULE = [  # 新增角色未单独配置作息时使用
+    {"start": 0, "end": 8, "activity": "在休息", "label": "休息中", "busy": True, "sleepy": True},
+    {"start": 8, "end": 12, "activity": "在忙自己的事", "label": "忙碌中", "busy": True},
+    {"start": 12, "end": 14, "activity": "在午休", "label": "午休中", "busy": False},
+    {"start": 14, "end": 18, "activity": "在忙自己的事", "label": "忙碌中", "busy": True},
+    {"start": 18, "end": 23, "activity": "在休息", "label": "空闲", "busy": False},
+    {"start": 23, "end": 24, "activity": "在休息", "label": "休息中", "busy": True, "sleepy": True},
+]
+
+# 随机事件池: 通用事件(所有角色) + 每个角色专属事件, 每天低概率触发一条
+# 部分事件带 followup(后续链): 命中后 delay_days 天会确定性触发后续事件, 形成"追剧感"
+RANDOM_EVENTS = [
+    {"key": "exam_fail", "text": "今天有一门课考砸了，心情很低落", "mood": -3, "kind": "低落",
+     "followup": {"key": "exam_redemption", "delay_days": 2, "text": "成绩出来了，其实没那么糟，松了口气", "mood": 2, "kind": "松了口气"}},
+    {"key": "got_praise", "text": "今天被老师/前辈夸了一句，有点开心", "mood": 2, "kind": "开心"},
+    {"key": "tired_day", "text": "今天忙了一整天，有点累", "mood": -1, "kind": "疲惫"},
+    {"key": "good_read", "text": "今天读到一段很喜欢的内容，心情很好", "mood": 1, "kind": "愉快"},
+    {"key": "small_worry", "text": "今天有件小事一直放在心上，有点烦", "mood": -2, "kind": "烦闷"},
+    {"key": "nice_weather", "text": "今天天气很好，心情也跟着亮了起来", "mood": 1, "kind": "愉快"},
+    {"key": "caught_cold", "text": "今天好像有点着凉，身体不太舒服", "mood": -2, "kind": "不舒服",
+     "followup": {"key": "recovered", "delay_days": 2, "text": "感冒好多了，精神终于回来了", "mood": 1, "kind": "痊愈"}},
+    {"key": "happy_surprise", "text": "今天遇到一件让人意外开心的事", "mood": 2, "kind": "雀跃"},
+]
+
+NPC_RANDOM_EVENTS = {
+    "npc_01": [
+        {"key": "debug_stuck", "text": "今天 debug 卡了好久，有点烦躁", "mood": -2, "kind": "烦躁",
+         "followup": {"key": "debug_solved", "delay_days": 1, "text": "昨天那个 bug 终于找到原因了，超有成就感", "mood": 2, "kind": "开心"}},
+        {"key": "code_passed", "text": "今天写的代码一次就通过了，很有成就感", "mood": 2, "kind": "开心"},
+        {"key": "help_junior", "text": "今天帮学弟学妹解决了一个难题，心里很满足", "mood": 2, "kind": "满足"},
+    ],
+    "npc_02": [
+        {"key": "club_smooth", "text": "今天文学社的活动特别顺利，很开心", "mood": 2, "kind": "开心"},
+        {"key": "manuscript_rejected", "text": "今天投稿的一篇文章被退回了，有点失落", "mood": -2, "kind": "失落",
+         "followup": {"key": "manuscript_accepted", "delay_days": 2, "text": "今天重写了一版，被编辑夸了，重拾信心", "mood": 2, "kind": "开心"}},
+        {"key": "beautiful_poem", "text": "今天读到一首很美的诗，一直回味", "mood": 1, "kind": "愉快"},
+    ],
+    "npc_03": [
+        {"key": "shrine_guest", "text": "今天神社来了一位特别的香客，很触动", "mood": 1, "kind": "触动"},
+        {"key": "omamori_done", "text": "今天做完了很多御守，很有成就感", "mood": 1, "kind": "满足"},
+        {"key": "training_hard", "text": "今天弓道练习很吃力，有点沮丧", "mood": -2, "kind": "沮丧",
+         "followup": {"key": "training_improved", "delay_days": 1, "text": "今天的弓道练习终于有进步，很开心", "mood": 1, "kind": "开心"}},
+    ],
+}
+
+# 角色卡语录池: 随心情/关系阶段/状态动态变化(优先: 睡觉 > 冷战 > 心情非平静 > 关系阶段 > 平静兜底)
+NPC_QUOTES = {
+    "npc_01": {
+        "sleepy": "……好困，让璃璃再睡五分钟。",
+        "cold": "……（不理你）",
+        "mood": {
+            "雀跃": "今天代码一次就过，心情超好！",
+            "愉快": "哼哼～今天心情不错。",
+            "平静": "真正的强大，不是从不迷茫，而是在迷茫中依然选择前进。",
+            "烦闷": "……debug 卡住了，先别惹我。",
+            "低落": "有点提不起劲……不过没事的。",
+        },
+        "stage": {
+            "陌生": "初次见面，我是星野璃。",
+            "熟悉": "有问题随时来问我呀。",
+            "亲近": "和你说话，总是很轻松。",
+            "亲密": "有你在，就觉得很安心。",
+        },
+    },
+    "npc_02": {
+        "sleepy": "夜深了，愿你也有个温柔的梦。",
+        "cold": "……（把书轻轻合上，别过脸）",
+        "mood": {
+            "雀跃": "今天的风都是甜的呢。",
+            "愉快": "心里暖暖的，像晒着太阳。",
+            "平静": "真正的温柔，不是从不脆弱，而是在安静里依然愿意陪你慢下来。",
+            "烦闷": "……有点心事，让我安静一会儿。",
+            "低落": "今天的雨，好像下进心里了。",
+        },
+        "stage": {
+            "陌生": "你好，我是文学社的苏晚柠。",
+            "熟悉": "有空来图书馆坐坐吧。",
+            "亲近": "你来了，我心里就很安稳。",
+            "亲密": "想和你，慢慢看遍四季。",
+        },
+    },
+    "npc_03": {
+        "sleepy": "夜深，祈愿君安眠。",
+        "cold": "……（垂眸，安静不语）",
+        "mood": {
+            "雀跃": "今日的风铃，响得格外清脆。",
+            "愉快": "心静如水，也微有涟漪。",
+            "平静": "愿以安静的祈愿，抚平你眉间的褶皱。",
+            "烦闷": "……今日心绪略乱。",
+            "低落": "连樱色都黯淡了些。",
+        },
+        "stage": {
+            "陌生": "初次见面，我是白河祈。",
+            "熟悉": "若有烦忧，可说与我听。",
+            "亲近": "与你并肩，心便安宁。",
+            "亲密": "愿我的祈愿，只为你一人。",
+        },
+    },
+}
+
+
+# ============================================================
+# 关系张力(冷战/和好): 明显冒犯/敷衍累积→冷战, 真诚关心/道歉累积→和好
+# ============================================================
+TENSION_MAX = 10               # 张力上限
+TENSION_COLD = 4               # >= 此值进入"冷战"(语气变冷/暂停普通主动消息)
+TENSION_OFFENSE = 2            # 单轮好感度 <= -4 时的张力增量
+TENSION_MILD_OFFENSE = 1       # 单轮好感度在 [-3,-1] 区间时的张力增量
+TENSION_SOOTHE = -1            # 单轮好感度 >= +3 时的张力减量(关心/哄)
+TENSION_WARM_SOOTHE = -2       # 单轮好感度 >= +5 时的张力减量(真诚道歉/很暖心)
 
 
 def load_agents_config():

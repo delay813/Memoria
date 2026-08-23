@@ -3,6 +3,7 @@
 - 把"今日世界上下文"(现实日期/节日)注入每个NPC的对话
 - 特定日期(节日/角色生日)首次对话时, 触发角色特殊问候
 """
+import random
 import threading
 import time
 from datetime import date
@@ -10,34 +11,43 @@ from datetime import date
 import config
 from agent import Agent
 from narrator import WorldClock
+from user_profile import UserProfile
 
 
 class Orchestrator:
     def __init__(self):
         cfg = config.load_agents_config()
+        self.user = UserProfile(config.USER_FILE)
         self.agents = {}
         for a in cfg.get("agents", []):
             agent = Agent(
                 a["id"], a["name"], a.get("persona", ""),
                 description=a.get("description", ""),
                 birthday=a.get("birthday", ""),
+                unlock_cb=self.user.unlock,
             )
             self.agents[agent.agent_id] = agent
 
         self.world = WorldClock()
 
     def list_agents(self):
-        return [
-            {
+        result = []
+        for a in self.agents.values():
+            st = a.current_status()
+            result.append({
                 "id": a.agent_id,
                 "name": a.name,
                 "description": a.description,
                 "birthday": a.birthday,
                 "favorability": a.get_favor(),
                 "mood": a.get_mood(),
-            }
-            for a in self.agents.values()
-        ]
+                "status": st["label"],
+                "activity": st["activity"],
+                "busy": st["busy"],
+                "tension_label": a.tension_label(),
+                "quote": a.dynamic_quote(),
+            })
+        return result
 
     def get_agent(self, agent_id):
         return self.agents.get(agent_id)
@@ -61,24 +71,160 @@ class Orchestrator:
                 pass
         return names
 
-    def chat_stream(self, agent_id, question):
-        """与指定NPC对话(流式): 注入今日世界上下文 + 特殊问候"""
-        agent = self.get_agent(agent_id)
-        if not agent:
-            yield f"❌ 未找到角色: {agent_id}"
-            return
-        world_context = self.world.today_context()
-        special_names = self._today_special_names(agent)
-        greet_hint = self.world.greeting_hint(agent_id, special_names)
-        yield from agent.chat_stream(
-            question, world_context=world_context, greet_hint=greet_hint
+    def _social_context(self, agent_id):
+        """跨角色互动: 告知当前角色"用户最近也和其他角色有互动"及其他角色近况, 让角色自然关心/转述"""
+        today = self.world.today()
+        others = []
+        for aid, a in self.agents.items():
+            if aid == agent_id:
+                continue
+            last = a.get_last_seen()
+            if not last:
+                continue
+            try:
+                days = (today - date.fromisoformat(last)).days
+            except Exception:
+                continue
+            if 0 <= days <= 2:
+                st = a.current_status()
+                ev = a.life.today_event()
+                line = f"{a.name}（{st['label']}）"
+                if ev:
+                    line += f"，她今天{ev.get('text', '')}"
+                others.append(line)
+        if not others:
+            return ""
+        detail = "\n".join(f"- {o}" for o in others)
+        return (
+            "【你听到的关于其他角色和用户的消息】\n"
+            f"{detail}\n"
+            "你可以自然地在合适的时候提起、关心、好奇或转述这些，但不要每句话都说、不要显得刻意。"
         )
 
+    def _relay_context(self, agent):
+        """低概率随机挑一位其他角色, 返回其近况(供普通主动消息"转述"); 无则返回 None。"""
+        others = [a for aid, a in self.agents.items() if aid != agent.agent_id]
+        if not others:
+            return None
+        if random.random() >= config.CROSS_NPC_RELAY_PROBABILITY:
+            return None
+        other = random.choice(others)
+        st = other.current_status()
+        ev = other.life.today_event()
+        if ev:
+            return f"你最近听说{other.name}今天{ev.get('text', '')}，想顺便和对方聊聊这件事"
+        return f"你最近见到{other.name}在{st['activity']}，想顺便和对方提一句"
+
+    def _achievement_event(self, key):
+        """解锁成就并返回事件数据; 未新解锁则返回 None"""
+        if self.user.unlock(key):
+            a = self.user.find_achievement(key)
+            if a:
+                return {"type": "achievement", "data": {
+                    "key": a["key"], "emoji": a["emoji"],
+                    "label": a["label"], "desc": a["desc"],
+                }}
+        return None
+
+    def chat_stream(self, agent_id, question):
+        """与指定NPC对话(流式): 注入世界上下文/特殊问候/昵称/跨角色社交上下文 + 成就解锁事件"""
+        agent = self.get_agent(agent_id)
+        if not agent:
+            yield {"type": "error", "data": f"未找到角色: {agent_id}"}
+            return
+        agent.sync_life()
+        world_context = self.world.today_context()
+        world_context += "\n" + agent.status_context()
+        event_context = agent.life_events_context()
+        if event_context:
+            world_context += "\n" + event_context
+        special_names = self._today_special_names(agent)
+        # 深夜睡着时先不消费节日/生日问候(等醒了再送), 避免问候被白白用掉
+        is_sleepy = agent.current_status().get("sleepy")
+        greet_hint = None if is_sleepy else self.world.greeting_hint(agent_id, special_names)
+        social_context = self._social_context(agent_id)
+
+        nickname = self.user.get_nickname()
+
+        ev = self._achievement_event("first_chat")
+        if ev:
+            yield ev
+
+        milestone_data = None
+        reconciled = False
+        for event in agent.chat_stream(
+            question, world_context=world_context, greet_hint=greet_hint,
+            social_context=social_context or None, user_nickname=nickname,
+        ):
+            if event.get("type") == "favor":
+                data = event.get("data") or {}
+                fav = data.get("favorability", 0)
+                for key, threshold in (("favor_45", 45), ("favor_70", 70)):
+                    if fav >= threshold:
+                        ev = self._achievement_event(key)
+                        if ev:
+                            yield ev
+                if data.get("reconciled"):
+                    reconciled = True
+            if event.get("type") == "milestone":
+                milestone_data = event.get("data") or {}
+            yield event
+
+        # 锁已释放: 生成剧情消息(里程碑/和好)并送进收件箱 + 透出给前端
+        if milestone_data:
+            content = agent.generate_milestone_message(
+                milestone_data.get("from", ""), milestone_data.get("to", ""))
+            if content:
+                agent.add_proactive("milestone", content)
+                yield {"type": "milestone_story", "data": {"name": agent.name, "content": content}}
+        if reconciled:
+            content = agent.generate_reconcile_message()
+            if content:
+                agent.add_proactive("reconcile", content)
+                yield {"type": "reconcile", "data": {"name": agent.name, "content": content}}
+
+        # 和全部角色都聊过天
+        if len(self.agents) > 1 and all(a.get_last_seen() for a in self.agents.values()):
+            ev = self._achievement_event("three_agents")
+            if ev:
+                yield ev
+
+    def get_memory_profile(self, agent_id):
+        """返回指定NPC的记忆卡("她眼中的你"): 事实库 + 画像 + 关系状态"""
+        agent = self.get_agent(agent_id)
+        if not agent:
+            return None
+        return agent.get_memory_profile()
+
+    def suggest_topics(self, agent_id):
+        """为指定角色生成 3 个开场话题"""
+        agent = self.get_agent(agent_id)
+        if not agent:
+            return None
+        return agent.suggest_topics()
+
+    def get_achievements(self):
+        """返回全部成就及解锁状态(供前端成就墙)"""
+        return self.user.all_achievements()
+
     def snapshot(self):
-        return self.world.snapshot()
+        snap = self.world.snapshot()
+        npcs = []
+        for a in self.agents.values():
+            st = a.current_status()
+            npcs.append({
+                "id": a.agent_id,
+                "name": a.name,
+                "status": st["label"],
+                "activity": st["activity"],
+                "busy": st["busy"],
+                "events": a.life.recent_events(2),
+            })
+        snap["npcs"] = npcs
+        return snap
 
     def reset_all(self):
-        """初始化所有角色: 清空对话/记忆/好感度, 重置世界"""
+        """初始化所有角色: 清空对话/记忆/好感度/日记, 重置世界"""
         for a in self.agents.values():
             a.reset()
         self.world.reset()
@@ -93,16 +239,27 @@ class Orchestrator:
         today_iso = today.isoformat()
         now = time.time()
         for a in self.agents.values():
-            # 1) 节日/生日: 当天主动送祝福(每天一次)
+            # 0) 惰性推进世界模拟(作息/随机事件): 回填离开期间的日子
+            a.sync_life()
+            # 1) 惰性触发隔夜整理(深睡): 用户上线后检查, 无新互动则免做
+            a.maybe_dream()
+            # 1.5) 补回深夜积压的消息: 她已醒来且不再睡觉时, 生成延迟回复进收件箱
+            if a.has_pending_replies() and not a.current_status()["sleepy"]:
+                content = a.generate_delayed_reply()
+                if content:
+                    a.add_proactive("reply", content)
+                    print(f"[{a.name}] 补回深夜消息: {content}")
+            # 2) 节日/生日: 当天主动送祝福(每天一次)
             names = self._today_special_names(a)
             if names and a.get_last_proactive().get("festival") != today_iso:
                 content = a.generate_proactive(f"今天是{'、'.join(names)}，想主动送上节日祝福或问候")
                 if content:
                     a.add_proactive("festival", content)
                     a.mark_proactive("festival", today_iso)
+                    self.user.unlock("first_proactive")
                     print(f"[{a.name}] 主动消息(节日): {content}")
                 continue
-            # 2) 普通主动(想念/想起): 与好感度挂钩 + 随时间衰减 + 冷却
+            # 3) 普通主动(想念/想起): 与好感度挂钩 + 随时间衰减 + 冷却
             if a.should_send_checkin(now):
                 days = 0
                 if a.get_last_seen():
@@ -110,10 +267,15 @@ class Orchestrator:
                         days = (today - date.fromisoformat(a.get_last_seen())).days
                     except Exception:
                         days = 0
-                content = a.generate_proactive(f"已经有{days}天没和对方联系了，心里有点想念")
+                reason = f"已经有{days}天没和对方联系了，心里有点想念"
+                relay = self._relay_context(a)
+                if relay:
+                    reason += f"；另外，{relay}"
+                content = a.generate_proactive(reason)
                 if content:
                     a.add_proactive("checkin", content)
                     a.mark_proactive("checkin", now)
+                    self.user.unlock("first_proactive")
                     print(f"[{a.name}] 主动消息(想念): {content}")
 
     def inbox_summary(self):

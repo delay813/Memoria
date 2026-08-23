@@ -39,6 +39,7 @@ ENV/
 # ============================================================
 agent/agents/
 agent/world.json
+agent/user.json
 
 # 向量库 / 本地数据库文件(兜底保护, 通常已被上面的 agent/agents/ 覆盖)
 *.sqlite3

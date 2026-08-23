@@ -8,7 +8,7 @@ import json
 import os
 import threading
 import time
-from datetime import date
+from datetime import date, datetime
 
 import config
 
@@ -87,6 +87,34 @@ class WorldClock:
         d = d or date.today()
         return config.WEEKDAY_NAMES[d.weekday()]
 
+    @staticmethod
+    def period_cn(now=None):
+        """当前时段(清晨/上午/中午/下午/傍晚/深夜), 用于强化"时间存在感"。"""
+        now = now or datetime.now()
+        h = now.hour
+        if 5 <= h < 8:
+            return "清晨"
+        if 8 <= h < 12:
+            return "上午"
+        if 12 <= h < 14:
+            return "中午"
+        if 14 <= h < 18:
+            return "下午"
+        if 18 <= h < 22:
+            return "傍晚"
+        return "深夜"
+
+    @staticmethod
+    def is_sleep_window(now=None):
+        """判断当前是否处于"睡眠窗口"(晚上特定时间段, 用于隔夜整理)。"""
+        now = now or datetime.now()
+        h = now.hour
+        start, end = config.DREAM_SLEEP_START, config.DREAM_SLEEP_END
+        if start > end:
+            # 跨午夜窗口, 如 21:00 ~ 次日 06:00
+            return h >= start or h < end
+        return start <= h < end
+
     def _sync_today(self):
         """用现实日期同步世界: 首次运行记录起始日; 跨天则记录"新的一天"事件"""
         with self.lock:
@@ -141,6 +169,7 @@ class WorldClock:
         d = self.today()
         festivals = [f["name"] for f in self.festivals_on(d)]
         lines = [f"今天是 {self.today_iso()}（{self.weekday_cn(d)}）。"]
+        lines.append(f"现在是 {datetime.now().strftime('%H:%M')}。")
         if festivals:
             lines.append("今天是" + "、".join(festivals) + "。")
         return "【今日世界】\n" + "\n".join(lines)
@@ -168,10 +197,13 @@ class WorldClock:
         self._sync_today()
         with self.lock:
             d = self.today()
+            now = datetime.now()
             festivals = [f["name"] for f in self.festivals_on(d)]
             return {
                 "today": self.today_iso(),
                 "weekday": self.weekday_cn(d),
+                "now": now.strftime("%H:%M"),
+                "period": self.period_cn(now),
                 "days_elapsed": self.days_elapsed,
                 "festivals": festivals,
                 "events": list(self.events),

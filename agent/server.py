@@ -8,9 +8,11 @@
 """
 import json
 import os
+import threading
 
 import uvicorn
 from fastapi import FastAPI, Request
+from starlette.concurrency import run_in_threadpool
 from starlette.responses import RedirectResponse, StreamingResponse
 from starlette.staticfiles import StaticFiles
 
@@ -33,6 +35,20 @@ app.mount("/static", StaticFiles(directory=os.path.join(config.BASE_DIR, "static
 orch = get_orchestrator()
 
 
+def _prefetch_topics():
+    """后台预生成各角色开场卡(命中缓存), 让首次加载也秒开; 失败不影响服务。"""
+    if not config.TOPIC_PREFETCH:
+        return
+    for aid in list(orch.agents.keys()):
+        try:
+            orch.suggest_topics(aid)
+        except Exception as e:  # noqa: BLE001
+            print(f"[开场卡预热] {aid} 生成失败: {e}")
+
+
+threading.Thread(target=_prefetch_topics, daemon=True).start()
+
+
 # ============================================================
 # 二、接口
 # ============================================================
@@ -50,6 +66,64 @@ async def agent_history(agent_id: str):
     if not agent:
         return {"error": f"未找到角色: {agent_id}"}
     return {"agent_id": agent_id, "name": agent.name, "messages": orch.get_history(agent_id)}
+
+
+@app.get("/agents/{agent_id}/diary")
+async def agent_diary(agent_id: str):
+    """返回指定NPC的日历史(隔夜整理的梦境日记), 供前端回看"""
+    agent = orch.get_agent(agent_id)
+    if not agent:
+        return {"error": f"未找到角色: {agent_id}"}
+    return {"agent_id": agent_id, "name": agent.name, "diary": agent.get_daily_log()}
+
+
+@app.get("/agents/{agent_id}/memory")
+async def agent_memory(agent_id: str):
+    """返回指定NPC的记忆卡("她眼中的你"): 事实库 + 用户画像 + 关系状态"""
+    data = orch.get_memory_profile(agent_id)
+    if not data:
+        return {"error": f"未找到角色: {agent_id}"}
+    agent = orch.get_agent(agent_id)
+    return {"agent_id": agent_id, "name": agent.name, **data}
+
+
+@app.get("/agents/{agent_id}/topics")
+async def agent_topics(agent_id: str):
+    """为指定角色生成开场话题(线程池执行, 避免模型调用阻塞事件循环)"""
+    topics = await run_in_threadpool(orch.suggest_topics, agent_id)
+    if topics is None:
+        return {"error": f"未找到角色: {agent_id}"}
+    return {"agent_id": agent_id, "topics": topics}
+
+
+@app.get("/agents/{agent_id}/schedule")
+async def agent_schedule(agent_id: str):
+    """返回指定NPC的今日行程(带当前时段高亮)"""
+    agent = orch.get_agent(agent_id)
+    if not agent:
+        return {"error": f"未找到角色: {agent_id}"}
+    return {"agent_id": agent_id, "schedule": agent.schedule_today()}
+
+
+@app.get("/user")
+async def get_user():
+    """当前用户档案(昵称)"""
+    return {"nickname": orch.user.get_nickname()}
+
+
+@app.post("/user")
+async def set_user(request: Request):
+    """设置用户昵称(称呼随关系演进用)"""
+    body = await request.json()
+    nickname = str(body.get("nickname") or "")[:20]
+    orch.user.set_nickname(nickname)
+    return {"nickname": orch.user.get_nickname()}
+
+
+@app.get("/achievements")
+async def achievements():
+    """全部成就及解锁状态(供前端成就墙)"""
+    return {"achievements": orch.get_achievements()}
 
 
 @app.get("/inbox")
@@ -86,7 +160,7 @@ async def world_state():
 
 @app.post("/reset")
 async def reset_all():
-    """初始化所有角色: 清空对话记录/记忆/好感度, 重置世界状态"""
+    """初始化所有角色: 清空对话记录/记忆/好感度/日记, 重置世界状态"""
     return orch.reset_all()
 
 
@@ -105,10 +179,14 @@ async def chat_stream(request: Request):
         return {"error": f"未找到角色: {agent_id}, 可用角色见 GET /agents"}
 
     def generation():
-        for chunk in orch.chat_stream(agent_id, question):
-            data = json.dumps({"content": chunk, "done": False}, ensure_ascii=False)
-            yield f"data: {data}\n\n"
-        yield f"data: {json.dumps({'content': '', 'done': True}, ensure_ascii=False)}\n\n"
+        for event in orch.chat_stream(agent_id, question):
+            # 事件统一为 dict: {type: cognition/content/favor/milestone/error, data: ...}
+            if isinstance(event, dict):
+                data = event
+            else:
+                data = {"type": "content", "data": event}
+            yield f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
+        yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         generation(),

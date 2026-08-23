@@ -37,7 +37,12 @@ class SimpleBM25:
 
     @staticmethod
     def _tokenize(text):
-        return re.findall(r"[a-zA-Z0-9]+|[\u4e00-\u9fff]", (text or "").lower())
+        """英文/数字按单词, 中文按双字词(bigram)切分; bigram 比单字有语义区分度, 且零依赖。"""
+        text = (text or "").lower()
+        tokens = re.findall(r"[a-z0-9]+", text)
+        han = "".join(re.findall(r"[\u4e00-\u9fff]", text))
+        tokens += [han[i:i + 2] for i in range(len(han) - 1)]
+        return tokens
 
     def _idf(self, term):
         df = self.df.get(term, 0)
@@ -87,6 +92,8 @@ class LongTermMemory:
         # 小块(检索单位)的Document列表 + BM25稀疏索引
         self._docs = []
         self.bm25 = None
+        # topic -> 父块id集合 的反查索引(话题联想扩展用)
+        self._topic_index = {}
         self._rebuild_bm25()
 
     # ============================================================
@@ -191,7 +198,7 @@ class LongTermMemory:
         self.add_many([text], [metadata])
 
     def add_many(self, texts, metadatas=None):
-        """批量写入多条记忆(只重建一次BM25索引, 避免逐条写入的O(n^2)性能问题)。
+        """批量写入多条记忆, 并做去重(避免同一件事反复追加、堆积重复)。
 
         texts:     原始文本列表
         metadatas: 与 texts 等长的元数据字典列表(可为 None)
@@ -204,23 +211,212 @@ class LongTermMemory:
             metadatas += [{}] * (len(texts) - len(metadatas))
 
         now = time.time()
-        metas, ids, docs = [], [], []
+        # 1) 预处理: 清理空文本 + 提取话题标签
+        cleaned = []
         for text, meta in zip(texts, metadatas):
             text = str(text or "").strip()
             if not text:
                 continue
             meta = dict(meta or {})
-            parent_id = uuid.uuid4().hex
-            smalls = self._split_small(text)
-            for i, s in enumerate(smalls):
-                m = dict(meta)
-                m["parent_id"] = parent_id
-                m["parent_text"] = text
-                m["parent_seq"] = i
-                metas.append(m)
-                ids.append(f"{parent_id}:{i}")
-                docs.append(Document(page_content=s, metadata=m))
+            # 话题标签: 从meta中取出并只存进registry(不放进Chroma metadata, 避免list类型报错)
+            topics_raw = meta.pop("topics", None) or []
+            if isinstance(topics_raw, str):
+                topics_raw = [topics_raw]
+            topics = [str(t).strip() for t in topics_raw if str(t).strip()]
+            cleaned.append({"text": text, "meta": meta, "topics": topics})
+        if not cleaned:
+            return
 
+        # 2) 去重分流: 每条 → new(新增) / duplicate(强化旧记忆) / merge(保历史合并)
+        new_items, merges, reinforce = self._dedupe(cleaned, now)
+
+        # 3) 强化(duplicate): 只更新旧记忆元数据, 不写新块、不覆盖旧文本
+        for pid in reinforce:
+            entry = self._registry.get(pid)
+            if entry:
+                entry["frequency"] = entry.get("frequency", 0) + 1
+                entry["last_access_ts"] = now
+
+        # 4) 合并(merge): 保历史式合并, 更新旧父块文本(旧事实+新事实都保留)
+        for pid, merged_text, merged_topics in merges:
+            self._merge_into(pid, merged_text, merged_topics, now)
+
+        # 5) 新增(new): 批量写入
+        self._write_new(new_items, now)
+
+        # 6) 统一持久化 + 重建索引(BM25 + topic反查)
+        self._save_registry()
+        self._rebuild_bm25()
+
+    # ============================================================
+    # 记忆去重(写入时): embedding 相似度分流 + 保历史合并
+    # ============================================================
+    @staticmethod
+    def _cosine(a, b):
+        """两个向量的余弦相似度(纯Python, 零依赖)"""
+        if not a or not b or len(a) != len(b):
+            return 0.0
+        dot = na = nb = 0.0
+        for x, y in zip(a, b):
+            dot += x * y
+            na += x * x
+            nb += y * y
+        if na == 0.0 or nb == 0.0:
+            return 0.0
+        return dot / (math.sqrt(na) * math.sqrt(nb))
+
+    @staticmethod
+    def _classify_by_score(score):
+        """按相似度分档: duplicate(几乎复述) / new(明显新事) / gray(需小模型判断)"""
+        if score >= config.MEMORY_DEDUP_HIGH:
+            return "duplicate"
+        if score <= config.MEMORY_DEDUP_LOW:
+            return "new"
+        return "gray"
+
+    def _write_chunks(self, parent_id, text, base_meta=None):
+        """把一段父块文本切小块写入Chroma, 返回是否成功"""
+        base_meta = base_meta or {}
+        smalls = self._split_small(text)
+        metas, ids, docs = [], [], []
+        for i, s in enumerate(smalls):
+            m = dict(base_meta)
+            m["parent_id"] = parent_id
+            m["parent_text"] = text
+            m["parent_seq"] = i
+            metas.append(m)
+            ids.append(f"{parent_id}:{i}")
+            docs.append(Document(page_content=s, metadata=m))
+        try:
+            self.store.add_texts([d.page_content for d in docs], metadatas=metas, ids=ids)
+            return True
+        except Exception as e:
+            print(f"[长期记忆] 写入父块 {parent_id} 失败: {e}")
+            return False
+
+    def _best_parent_match(self, emb):
+        """用向量查最相似的小块并归组到父块, 返回 (parent_id, parent_text, cosine) 或 None"""
+        try:
+            hits = self.store.similarity_search_by_vector(emb, k=config.MEMORY_DEDUP_TOPK)
+        except Exception as e:
+            print(f"[长期记忆] 去重检索失败: {e}")
+            return None
+        if not hits:
+            return None
+        try:
+            embeds = self.embedding.embed_documents([h.page_content for h in hits])
+        except Exception as e:
+            print(f"[长期记忆] 去重候选嵌入失败: {e}")
+            return None
+        best_pid = best_text = None
+        best_score = -1.0
+        for doc, e in zip(hits, embeds):
+            pid = doc.metadata.get("parent_id")
+            if not pid:
+                continue
+            score = self._cosine(emb, e)
+            if score > best_score:
+                best_pid = pid
+                best_text = doc.metadata.get("parent_text") or doc.page_content
+                best_score = score
+        if best_pid is None:
+            return None
+        return best_pid, best_text, best_score
+
+    def _llm_dedup_judge(self, new_text, old_text):
+        """灰区判断: 让小模型输出 duplicate / merge / new。失败安全降级为 new(不丢信息)"""
+        prompt = f"""你是记忆去重助手。判断【新记忆】与【已有记忆】的关系, 只输出一个词:
+- duplicate: 新记忆是已有记忆的纯重复/重申, 没有任何新信息
+- merge: 是同一件事, 但新记忆带来新进展/新细节(如时间、地点、状态、心情的变化), 需要合并
+- new: 是不同的事, 不应合并
+
+特别注意: 涉及时间/地点/状态等"变化"的(如"昨天在上海, 今天在北京"、"之前喜欢、现在不喜欢"), 即使话题相似也必须是 merge 或 new, 绝不能当作 duplicate 把旧信息丢掉。
+
+【已有记忆】
+{old_text}
+
+【新记忆】
+{new_text}
+
+只输出一个词:"""
+        resp = self._call_small(prompt)
+        if not resp:
+            return "new"
+        content = resp.output.choices[0].message.content.strip().lower()
+        if "merge" in content:
+            return "merge"
+        if "duplicate" in content:
+            return "duplicate"
+        return "new"
+
+    def _llm_merge(self, new_text, old_text):
+        """生成保历史合并文本: 旧事实+新事实都保留。失败返回 None(降级为新增)"""
+        prompt = f"""你是记忆合并助手。把【已有记忆】和【新记忆】合并成一条完整记忆。硬性要求:
+1. 必须保留【已有记忆】里的全部历史事实, 尤其是"过去曾处于/曾发生"的信息(如"曾在上海")。
+2. 若是同一属性的变化(地点/工作/状态/喜好等), 用"之前…后来…/现在…"把新旧都写出来, 严禁用新信息覆盖旧信息。
+3. 若是补充细节, 把细节自然并入。
+4. 输出一条通顺的合并记忆, 80字以内, 不要任何前缀或解释。
+
+【已有记忆】
+{old_text}
+
+【新记忆】
+{new_text}"""
+        resp = self._call_small(prompt)
+        if not resp:
+            return None
+        return resp.output.choices[0].message.content.strip()
+
+    def _dedupe(self, cleaned, now):
+        """去重分流。返回 (new_items, merges, reinforce)。
+        new_items: 要新增的项; merges: [(pid, merged_text, merged_topics)]; reinforce: 要强化的pid集合。
+        去重失败/关闭时安全降级为"全部新增"(绝不因去重丢信息)。"""
+        if not config.MEMORY_DEDUP_ENABLED or not self._registry:
+            return cleaned, [], set()
+
+        new_items, merges, reinforce = [], [], set()
+        try:
+            embeds = self.embedding.embed_documents([c["text"] for c in cleaned])
+        except Exception as e:
+            print(f"[长期记忆] 去重embedding失败, 退化为全部新增: {e}")
+            return cleaned, [], set()
+
+        for item, emb in zip(cleaned, embeds):
+            match = self._best_parent_match(emb)
+            if match is None:
+                new_items.append(item)
+                continue
+            pid, old_text, score = match
+            cls = self._classify_by_score(score)
+            if cls == "new":
+                new_items.append(item)
+                continue
+            if cls == "duplicate":
+                # 高分复述: 直接强化旧记忆(不新增)
+                reinforce.add(pid)
+                continue
+            # 灰区: 小模型判断
+            verdict = self._llm_dedup_judge(item["text"], old_text)
+            if verdict == "duplicate":
+                reinforce.add(pid)
+            elif verdict == "merge":
+                merged = self._llm_merge(item["text"], old_text)
+                if merged:
+                    merges.append((pid, merged, item["topics"]))
+                else:
+                    new_items.append(item)   # 合并失败 → 安全降级为新增(保留旧记忆原样)
+            else:
+                new_items.append(item)
+
+        return new_items, merges, reinforce
+
+    def _write_new(self, items, now):
+        """批量写入"新"记忆(小块切分 + Chroma写入 + 注册表)"""
+        for item in items:
+            text, meta, topics = item["text"], item["meta"], item["topics"]
+            parent_id = uuid.uuid4().hex
+            if not self._write_chunks(parent_id, text, base_meta=meta):
+                continue   # 写入失败则跳过(不写注册表, 保持一致性)
             self._registry[parent_id] = {
                 "text": text,
                 "created_ts": now,
@@ -228,17 +424,31 @@ class LongTermMemory:
                 "importance": self._heuristic_importance(text),
                 "frequency": 0,
                 "status": "active",
+                "topics": topics,
             }
 
-        if not ids:
+    def _merge_into(self, pid, merged_text, merged_topics, now):
+        """保历史合并: 删除旧父块的小块, 写入合并文本(同parent_id), 更新注册表(保留created_ts)"""
+        entry = self._registry.get(pid)
+        if not entry:
             return
+        old_text = entry.get("text", "")
         try:
-            self.store.add_texts([d.page_content for d in docs], metadatas=metas, ids=ids)
-            self._docs.extend(docs)
-            self._build_bm25()
-            self._save_registry()
+            self.store.delete(where={"parent_id": pid})
         except Exception as e:
-            print(f"[长期记忆] 批量写入失败: {e}")
+            print(f"[长期记忆] 合并删除旧块失败 {pid}: {e}")
+            return
+        if not self._write_chunks(pid, merged_text):
+            # 写入失败则回滚旧文本, 避免记忆丢失
+            print(f"[长期记忆] 合并写入失败, 回滚旧文本 {pid}")
+            self._write_chunks(pid, old_text)
+            return
+        entry["text"] = merged_text
+        entry["importance"] = max(entry.get("importance", 5), self._heuristic_importance(merged_text))
+        entry["frequency"] = entry.get("frequency", 0) + 1
+        entry["last_access_ts"] = now
+        entry["updated_ts"] = now
+        entry["topics"] = list(dict.fromkeys((entry.get("topics", []) or []) + list(merged_topics)))
 
     # ============================================================
     # BM25 索引
@@ -256,6 +466,7 @@ class LongTermMemory:
             print(f"[长期记忆] BM25重建失败, 仅用向量检索: {e}")
             self._docs = []
         self._build_bm25()
+        self._rebuild_topic_index()
 
     def _build_bm25(self):
         try:
@@ -263,6 +474,16 @@ class LongTermMemory:
         except Exception as e:
             print(f"[长期记忆] BM25构建失败: {e}")
             self.bm25 = None
+
+    def _rebuild_topic_index(self):
+        """topic -> 父块id集合 的反查索引, 从registry构建(软遗忘的记忆不参与联想)"""
+        self._topic_index = {}
+        for pid, entry in self._registry.items():
+            if entry.get("status") == "forgotten":
+                continue
+            for t in entry.get("topics", []):
+                if t:
+                    self._topic_index.setdefault(t, set()).add(pid)
 
     def reset(self):
         """清空长期记忆(向量库 + 注册表 + 内存索引)"""
@@ -274,6 +495,7 @@ class LongTermMemory:
             print(f"[长期记忆] 清空失败: {e}")
         self._docs = []
         self.bm25 = None
+        self._topic_index = {}
         self._registry = {}
         self._save_registry()
 
@@ -287,6 +509,8 @@ class LongTermMemory:
             parents = self._group_to_parents(fused, limit=config.MEMORY_RERANK_TOPN)  # [(pid, text, rrf)]
             if not parents:
                 return []
+            # 话题联想扩展: 与已召回父块共享话题的其他父块加入候选(多跳式联想)
+            parents, topic_hits = self._expand_by_topic(parents, limit=config.MEMORY_TOPIC_EXPAND)
             text_to_parent = {p[1]: p for p in parents}
             texts = [p[1] for p in parents]
             reranked, sim_scores = self._rerank(query, texts, top_n=len(texts))
@@ -303,9 +527,12 @@ class LongTermMemory:
                 if entry.get("status") == "forgotten":
                     continue
                 raw_sim = sim_scores[i] if sim_scores and sim_scores[i] is not None else None
-                # 相关性过低(低于阈值)的记忆不注入上下文
+                # 相关性过低(低于阈值)的记忆不注入上下文; 但话题命中的记忆给保底分, 不被误过滤
                 if raw_sim is not None and raw_sim < config.MEMORY_RECALL_THRESHOLD:
-                    continue
+                    if pid in topic_hits:
+                        raw_sim = config.MEMORY_TOPIC_SIM_FLOOR
+                    else:
+                        continue
                 sim = raw_sim if raw_sim is not None else 0.5
                 rec = self._recency_score(entry, now)
                 imp = entry.get("importance", 5) / 10.0
@@ -370,6 +597,30 @@ class LongTermMemory:
             parent_texts[pid] = parent_text
         ranked = sorted(parent_scores.items(), key=lambda item: item[1], reverse=True)[:limit]
         return [(pid, parent_texts[pid], score) for pid, score in ranked]
+
+    def _expand_by_topic(self, parents, limit=3):
+        """话题联想扩展: 对已召回的父块, 用其话题标签反查同话题的其他父块。
+        返回 (扩展后的父块列表, 被扩展命中的父块id集合)。扩展只扩大候选池, 不增加最终注入条数。"""
+        if not self._topic_index:
+            return parents, set()
+        seen = {p[0] for p in parents}
+        hit = set()
+        extra = []
+        for pid, _text, _score in parents:
+            for t in self._registry.get(pid, {}).get("topics", []):
+                for nb in self._topic_index.get(t, ()):
+                    if nb in seen or nb not in self._registry:
+                        continue
+                    if self._registry[nb].get("status") == "forgotten":
+                        continue
+                    seen.add(nb)
+                    hit.add(nb)
+                    extra.append((nb, self._registry[nb].get("text", ""), 0.0))
+                    if len(extra) >= limit:
+                        return parents + extra, hit
+                if len(extra) >= limit:
+                    return parents + extra, hit
+        return parents + extra, hit
 
     def _rerank(self, query, candidates, top_n=3):
         """重排模型对候选父块精排; 返回(文本列表, 分数列表)。失败时分数为None"""

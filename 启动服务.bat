@@ -1,10 +1,9 @@
 @echo off
-chcp 65001 >nul
 title Memoria
 cd /d "%~dp0agent"
 
 echo ============================================
-echo   å¿ƒå¿† Â· Memoria
+echo   ÐÄÒä ¡¤ Memoria
 echo   URL: http://127.0.0.1:8080/
 echo   Press Ctrl+C or close this window to stop
 echo ============================================
