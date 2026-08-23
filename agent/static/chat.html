@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>心忆 · Memoria</title>
+    <style>
+        :root {
+            --sidebar-bg: #0f1429;
+            --sidebar-width: 220px;
+            --panel-bg: rgba(255, 255, 255, 0.78);
+            --panel-border: rgba(255, 255, 255, 0.45);
+            --glass-shadow: 0 8px 32px rgba(15, 23, 42, 0.18);
+            --primary: #5b7cff;
+            --primary-soft: #8aa4ff;
+            --accent: #b794f6;
+            --text-dark: #1e293b;
+            --text-muted: #64748b;
+            --text-light: #94a3b8;
+            --user-bubble: linear-gradient(135deg, #5b7cff 0%, #7c6dfc 100%);
+            --ai-bubble: rgba(255, 255, 255, 0.9);
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: var(--sidebar-bg); color: var(--text-dark);
+            height: 100vh; overflow: hidden;
+            transition: background 0.4s ease;
+            -webkit-font-smoothing: antialiased;
+        }
+        .app-container { display: flex; height: 100vh; width: 100vw; }
+
+        /* ---------- 左侧导航 ---------- */
+        .sidebar {
+            width: var(--sidebar-width); min-width: var(--sidebar-width);
+            background: var(--sidebar-bg); display: flex; flex-direction: column;
+            padding: 22px 16px; position: relative; z-index: 10;
+            transition: background 0.4s ease;
+        }
+        .sidebar::after {
+            content: ''; position: absolute; top: 0; right: 0; width: 1px; height: 100%;
+            background: linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent);
+        }
+        .brand {
+            display: flex; align-items: center; gap: 10px; padding: 0 8px 18px;
+            color: white; font-size: 16px; font-weight: 700; letter-spacing: 2px;
+        }
+        .brand::before {
+            content: ''; width: 9px; height: 9px; border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary), var(--accent));
+            box-shadow: 0 0 10px var(--primary);
+        }
+        .char-label {
+            padding: 0 8px 10px; font-size: 11px; color: rgba(255,255,255,0.35);
+            letter-spacing: 2px;
+        }
+        .character-switcher { display: flex; flex-direction: column; gap: 8px; padding: 0 2px; }
+        .cs-item {
+            display: flex; align-items: center; gap: 12px;
+            padding: 9px 12px; border-radius: 14px; cursor: pointer;
+            transition: all 0.25s ease; border: 1px solid transparent;
+            color: var(--text-light); font-size: 14px; font-weight: 500;
+        }
+        .cs-item:hover { background: rgba(255,255,255,0.08); color: white; transform: translateX(3px); }
+        .cs-item.active {
+            background: linear-gradient(90deg, rgba(91,124,255,0.28), rgba(183,148,246,0.12));
+            color: white; border-color: var(--primary-soft);
+        }
+        .cs-avatar {
+            width: 42px; height: 42px; border-radius: 12px; object-fit: cover; flex-shrink: 0;
+            border: 2px solid rgba(255,255,255,0.25); transition: all 0.25s ease; background: #2a3350;
+        }
+        .cs-item.active .cs-avatar { border-color: rgba(255,255,255,0.7); box-shadow: 0 4px 14px rgba(0,0,0,0.3); }
+        .cs-meta { min-width: 0; flex: 1; }
+        .cs-name { font-size: 14px; font-weight: 600; }
+        .cs-favor { font-size: 11px; color: var(--text-light); margin-top: 2px; }
+        .unread-badge {
+            margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px;
+            border-radius: 9px; background: #ef4444; color: #fff; font-size: 11px;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        .sidebar-foot {
+            margin-top: auto; padding: 14px 8px 0; border-top: 1px solid rgba(255,255,255,0.07);
+            font-size: 11px; color: rgba(255,255,255,0.55); line-height: 1.7;
+        }
+        .world-date { font-weight: 600; color: rgba(255,255,255,0.85); font-size: 12px; }
+        .world-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+        .world-tags:empty { display: none; }
+        .tag-mini {
+            font-size: 10px; padding: 2px 8px; border-radius: 999px;
+            background: rgba(255,255,255,0.1); color: var(--primary-soft);
+        }
+        .reset-btn {
+            width: 100%; margin-top: 12px; padding: 8px 0;
+            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 12px; color: rgba(255,255,255,0.5); font-size: 12px;
+            cursor: pointer; letter-spacing: 1px; transition: all 0.2s;
+        }
+        .reset-btn:hover {
+            background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.4); color: #fca5a5;
+        }
+
+        /* ---------- 中间主舞台 ---------- */
+        .main-stage { flex: 1; position: relative; display: flex; overflow: hidden; min-width: 0; }
+        .stage-background { position: absolute; inset: 0; z-index: 0; transition: opacity 0.5s ease; }
+        .stage-background img { width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+        .stage-overlay {
+            position: absolute; inset: 0; z-index: 1;
+            background: linear-gradient(90deg,
+                rgba(15,20,41,0.55) 0%, rgba(15,20,41,0.28) 35%,
+                rgba(15,20,41,0.15) 55%, rgba(15,20,41,0.45) 100%);
+        }
+        .stage-content {
+            position: relative; z-index: 2; flex: 1; display: flex;
+            padding: 16px 20px; gap: 18px; min-width: 0;
+        }
+
+        /* ---------- 聊天面板 ---------- */
+        .chat-panel {
+            flex: 1; width: 100%; min-width: 420px; display: flex; flex-direction: column;
+            background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 26px;
+            box-shadow: var(--glass-shadow); backdrop-filter: blur(24px); overflow: hidden;
+        }
+        .chat-header {
+            padding: 16px 24px; border-bottom: 1px solid rgba(148,163,184,0.16);
+            display: flex; justify-content: space-between; align-items: center;
+            background: rgba(255,255,255,0.4);
+        }
+        .chat-title { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; color: var(--text-dark); }
+        .chat-title .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 8px var(--primary); }
+        .chat-favor {
+            font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px;
+        }
+        .favor-bar {
+            width: 90px; height: 6px; border-radius: 4px; background: rgba(148,163,184,0.2); overflow: hidden;
+        }
+        .favor-bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: width 0.5s ease; }
+
+        .messages-container {
+            flex: 1; overflow-y: auto; padding: 24px 28px;
+            display: flex; flex-direction: column; gap: 20px;
+        }
+        .empty { margin: auto; text-align: center; color: var(--text-light); font-size: 13px; line-height: 2; }
+        .message { display: flex; gap: 12px; animation: fadeIn 0.3s ease; max-width: 90%; }
+        .message.user { align-self: flex-end; flex-direction: row-reverse; }
+        .message.assistant { align-self: flex-start; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .avatar {
+            width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
+            border: 2px solid rgba(255,255,255,0.6); background: #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700;
+            color: var(--text-muted);
+        }
+        .avatar img { width: 100%; height: 100%; object-fit: cover; }
+        .message-body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+        .message.user .message-body { align-items: flex-end; }
+        .message-bubble {
+            padding: 12px 16px; border-radius: 18px; font-size: 14.5px; line-height: 1.7;
+            word-wrap: break-word; white-space: pre-wrap; box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        }
+        .message.user .message-bubble { background: var(--user-bubble); color: white; border-bottom-right-radius: 5px; }
+        .message.assistant .message-bubble { background: var(--ai-bubble); color: var(--text-dark); border-bottom-left-radius: 5px; }
+        .message-time { font-size: 11px; color: var(--text-muted); padding: 0 4px; }
+        .typing { display: inline-flex; gap: 5px; padding: 4px 2px; }
+        .typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); animation: blink 1.2s infinite ease-in-out; }
+        .typing i:nth-child(2) { animation-delay: 0.15s; }
+        .typing i:nth-child(3) { animation-delay: 0.3s; }
+        @keyframes blink { 0%,80%,100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+
+        /* ---------- 输入区 ---------- */
+        .input-area { padding: 14px 24px 20px; border-top: 1px solid rgba(148,163,184,0.16); background: rgba(255,255,255,0.45); }
+        .input-wrapper {
+            display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.92);
+            border: 1px solid rgba(148,163,184,0.25); border-radius: 22px; padding: 5px 5px 5px 16px;
+            box-shadow: 0 4px 16px rgba(0,0,0,0.04); transition: all 0.3s;
+        }
+        .input-wrapper:focus-within { border-color: var(--primary-soft); box-shadow: 0 4px 20px rgba(91,124,255,0.12); }
+        .input-wrapper input {
+            flex: 1; border: none; outline: none; color: var(--text-dark); font-size: 14px;
+            line-height: 1.5; padding: 8px 0; background: transparent;
+        }
+        .input-wrapper input::placeholder { color: var(--text-light); }
+        .send-btn {
+            width: 40px; height: 40px; border-radius: 13px; border: none; flex-shrink: 0;
+            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
+            color: white; cursor: pointer; display: flex; align-items: center; justify-content: center;
+            font-size: 19px; transition: all 0.3s;
+        }
+        .send-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(91,124,255,0.35); }
+        .send-btn:disabled { background: #cbd5e1; cursor: not-allowed; }
+
+        /* ---------- 右侧角色卡 ---------- */
+        .character-panel { width: 270px; min-width: 270px; display: flex; flex-direction: column; }
+        .character-card {
+            background: rgba(15, 20, 41, 0.55); backdrop-filter: blur(20px);
+            border: 1px solid rgba(255,255,255,0.12); border-radius: 22px; padding: 16px;
+            color: white; box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+            display: flex; flex-direction: column; gap: 12px;
+        }
+        .character-image-wrap {
+            width: 100%; aspect-ratio: 3 / 4; border-radius: 16px; overflow: hidden;
+            border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+            background: #1a2338;
+        }
+        .character-image-wrap img { width: 100%; height: 100%; object-fit: cover; object-position: center top; }
+        .character-names h2 { font-size: 19px; font-weight: 700; }
+        .character-names p { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 3px; }
+        .character-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+        .tag {
+            padding: 4px 9px; border-radius: 10px; font-size: 10px;
+            background: rgba(91,124,255,0.15); color: var(--primary-soft); border: 1px solid rgba(91,124,255,0.2);
+        }
+        .character-desc { font-size: 12.5px; color: rgba(255,255,255,0.75); line-height: 1.7; }
+        .favor-card {
+            padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,0.07);
+            border: 1px solid rgba(255,255,255,0.08);
+        }
+        .favor-card .row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 8px; }
+        .favor-card .row .label { color: rgba(255,255,255,0.6); }
+        .favor-card .row .value { font-weight: 700; color: var(--primary-soft); }
+        .favor-card .bar { height: 8px; border-radius: 5px; background: rgba(255,255,255,0.12); overflow: hidden; }
+        .favor-card .bar i { display: block; height: 100%; border-radius: 5px; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: width 0.5s ease; }
+        .quote-box {
+            padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,0.05);
+            border-left: 3px solid var(--primary); font-size: 11.5px; color: rgba(255,255,255,0.6);
+            line-height: 1.7; font-style: italic;
+        }
+
+        /* 滚动条 */
+        .messages-container::-webkit-scrollbar { width: 5px; }
+        .messages-container::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.35); border-radius: 3px; }
+
+        @media (max-width: 1100px) { .character-panel { display: none; } }
+        @media (max-width: 768px) {
+            .sidebar { display: none; }
+            .chat-panel { border-radius: 0; margin: 0; min-width: auto; background: rgba(255,255,255,0.92); }
+            .messages-container { padding: 16px; }
+            .input-area { padding: 12px 14px 16px; }
+        }
+    </style>
+</head>
+<body>
+<div class="app-container">
+    <!-- 左侧导航 -->
+    <aside class="sidebar">
+        <div class="brand">心忆 · Memoria</div>
+        <div class="char-label">角色</div>
+        <div class="character-switcher" id="switcher"></div>
+        <div class="sidebar-foot">
+            <div class="world-date" id="worldDate">—</div>
+            <div class="world-tags" id="worldTags"></div>
+            <button class="reset-btn" id="resetBtn">初始化所有角色</button>
+        </div>
+    </aside>
+
+    <!-- 中间主舞台 -->
+    <main class="main-stage">
+        <div class="stage-background" id="stageBg"><img id="bgImg" src="" alt=""></div>
+        <div class="stage-overlay"></div>
+        <div class="stage-content">
+            <!-- 聊天面板 -->
+            <div class="chat-panel">
+                <div class="chat-header">
+                    <div class="chat-title"><span class="dot"></span><span id="chatTitle">—</span></div>
+                    <div class="chat-favor">
+                        <span id="chatFavorText">—</span>
+                        <div class="favor-bar"><i id="chatFavorBar" style="width:0%"></i></div>
+                    </div>
+                </div>
+                <div class="messages-container" id="messages"></div>
+                <div class="input-area">
+                    <div class="input-wrapper">
+                        <input id="input" placeholder="说点什么…（Enter 发送）" autofocus>
+                        <button class="send-btn" id="sendBtn" title="发送">↑</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 右侧角色卡 -->
+            <div class="character-panel">
+                <div class="character-card">
+                    <div class="character-image-wrap"><img id="cardImg" src="" alt="角色立绘"></div>
+                    <div class="character-names">
+                        <h2 id="cardName">—</h2>
+                        <p id="cardEn">—</p>
+                    </div>
+                    <div class="character-tags" id="cardTags"></div>
+                    <p class="character-desc" id="cardDesc">—</p>
+                    <div class="favor-card">
+                        <div class="row"><span class="label">好感度</span><span class="value" id="cardFavorValue">—</span></div>
+                        <div class="bar"><i id="cardFavorBar" style="width:0%"></i></div>
+                    </div>
+                    <div class="quote-box" id="cardQuote">—</div>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<script>
+(function () {
+    // 角色视觉资料(图片/标签/语录), 按 agent_id 映射
+    var CHARACTERS = {
+        npc_01: {
+            avatar: "avatar_ruri.jpg", card: "card_ruri.jpg",
+            en: "Star Ruri", tags: ["帝国理工 · 计算机系", "反差萌学霸", "机械系美少女"],
+            quote: "真正的强大，不是从不迷茫，而是在迷茫中依然选择前进。"
+        },
+        npc_02: {
+            avatar: "avatar_wanning.jpg", card: "card_wanning.jpg",
+            en: "Su Wanning", tags: ["江南大学 · 文学院", "图书馆白月光", "文学社长"],
+            quote: "真正的温柔，不是从不脆弱，而是在安静里依然愿意陪你慢下来。"
+        },
+        npc_03: {
+            avatar: "avatar_shirakawa.jpg", card: "card_shirakawa.jpg",
+            en: "Shirakawa Inori", tags: ["樱守御神学园", "世代巫女", "神明系学姐"],
+            quote: "愿以安静的祈愿，抚平你眉间的褶皱。"
+        }
+    };
+    var THEMES = {
+        npc_01: { sidebar: '#0f1429', primary: '#5b7cff', soft: '#8aa4ff', accent: '#b794f6', user: 'linear-gradient(135deg,#5b7cff,#7c6dfc)' },
+        npc_02: { sidebar: '#2a2420', primary: '#d49a6a', soft: '#e0b48c', accent: '#8fae8b', user: 'linear-gradient(135deg,#d49a6a,#c98a8a)' },
+        npc_03: { sidebar: '#1a2429', primary: '#6a9cb0', soft: '#9cc4d4', accent: '#b0a0c0', user: 'linear-gradient(135deg,#6a9cb0,#8a9ec0)' }
+    };
+
+    var state = { agents: [], currentId: null, conversations: {}, world: null, streaming: false, unread: {} };
+
+    var $ = function (id) { return document.getElementById(id); };
+    var messagesBox = $('messages'), switcher = $('switcher'), input = $('input'), sendBtn = $('sendBtn');
+
+    function api(url, opts) {
+        return fetch(url, opts).then(function (r) {
+            if (!r.ok) throw new Error('HTTP ' + r.status);
+            return r.json();
+        });
+    }
+
+    function vis(id) { return CHARACTERS[id] || { avatar: '', card: '', en: '', tags: [], quote: '' }; }
+    function theme(id) { return THEMES[id] || THEMES.npc_01; }
+    function curAgent() {
+        for (var i = 0; i < state.agents.length; i++) if (state.agents[i].id === state.currentId) return state.agents[i];
+        return null;
+    }
+    function favorStage(f) {
+        if (f < 20) return '陌生'; if (f < 45) return '熟悉'; if (f < 70) return '亲近'; return '亲密';
+    }
+
+    function applyTheme(id) {
+        var t = theme(id);
+        var root = document.documentElement.style;
+        root.setProperty('--sidebar-bg', t.sidebar);
+        root.setProperty('--primary', t.primary);
+        root.setProperty('--primary-soft', t.soft);
+        root.setProperty('--accent', t.accent);
+        root.setProperty('--user-bubble', t.user);
+    }
+
+    // ---------- 世界状态 ----------
+    function renderWorld() {
+        if (!state.world) return;
+        var d = state.world.today || '', wd = state.world.weekday || '';
+        $('worldDate').textContent = d ? (d.replace(/-/g, '/') + ' · ' + wd) : '—';
+        var tags = $('worldTags'); tags.innerHTML = '';
+        (state.world.festivals || []).forEach(function (f) {
+            var s = document.createElement('span'); s.className = 'tag-mini'; s.textContent = f; tags.appendChild(s);
+        });
+    }
+    function loadWorld() {
+        api('/world').then(function (data) { state.world = data; renderWorld(); }).catch(function () {});
+    }
+    function loadInbox() {
+        api('/inbox').then(function (data) {
+            var map = {};
+            (data.agents || []).forEach(function (a) { map[a.id] = a.unread || 0; });
+            state.unread = map;
+            renderSwitcher();
+        }).catch(function () {});
+    }
+
+    // ---------- 角色切换器 ----------
+    function renderSwitcher() {
+        switcher.innerHTML = '';
+        state.agents.forEach(function (a) {
+            var v = vis(a.id);
+            var item = document.createElement('div');
+            item.className = 'cs-item' + (a.id === state.currentId ? ' active' : '');
+            item.dataset.id = a.id;
+
+            var img = document.createElement('img');
+            img.className = 'cs-avatar'; img.src = v.avatar; img.alt = a.name;
+            img.onerror = function () { img.style.display = 'none'; };
+
+            var meta = document.createElement('div'); meta.className = 'cs-meta';
+            var name = document.createElement('div'); name.className = 'cs-name'; name.textContent = a.name;
+            var favor = document.createElement('div'); favor.className = 'cs-favor';
+            favor.textContent = '好感度 ' + (a.favorability || 0) + ' · ' + favorStage(a.favorability || 0) + ' · ' + (a.mood || '平静');
+            meta.appendChild(name); meta.appendChild(favor);
+
+            item.appendChild(img); item.appendChild(meta);
+            var unread = state.unread[a.id] || 0;
+            if (unread > 0) {
+                var badge = document.createElement('span');
+                badge.className = 'unread-badge';
+                badge.textContent = unread > 9 ? '9+' : unread;
+                item.appendChild(badge);
+            }
+            item.addEventListener('click', function () { selectAgent(a.id); });
+            switcher.appendChild(item);
+        });
+    }
+
+    // ---------- 角色信息面板 ----------
+    function renderPanels() {
+        var a = curAgent(); if (!a) return;
+        var v = vis(a.id), f = a.favorability || 0;
+        $('chatTitle').textContent = '与 ' + a.name + ' 的对话';
+        $('chatFavorText').textContent = '好感度 ' + f + ' · ' + favorStage(f) + ' · 心情 ' + (a.mood || '平静');
+        $('chatFavorBar').style.width = f + '%';
+        $('bgImg').src = v.card;
+        $('cardImg').src = v.card;
+        $('cardName').textContent = a.name;
+        $('cardEn').textContent = v.en;
+        $('cardDesc').textContent = a.description || '';
+        $('cardQuote').textContent = '“' + v.quote + '”';
+        $('cardFavorValue').textContent = f + ' / 100 · ' + favorStage(f) + ' · ' + (a.mood || '平静');
+        $('cardFavorBar').style.width = f + '%';
+        var tags = $('cardTags'); tags.innerHTML = '';
+        v.tags.forEach(function (t) {
+            var s = document.createElement('span'); s.className = 'tag'; s.textContent = t; tags.appendChild(s);
+        });
+    }
+
+    // ---------- 消息渲染 ----------
+    function buildBubble(m) {
+        var a = curAgent(); var v = vis(a ? a.id : '');
+        var row = document.createElement('div');
+        row.className = 'message ' + m.role;
+
+        var avatar = document.createElement('div'); avatar.className = 'avatar';
+        if (m.role === 'user') {
+            avatar.textContent = '我';
+            avatar.style.background = 'linear-gradient(135deg,#94a3b8,#64748b)';
+            avatar.style.color = '#fff';
+        } else {
+            var img = document.createElement('img'); img.src = v.avatar; img.alt = a ? a.name : '';
+            img.onerror = function () { avatar.textContent = (a ? a.name : '?').charAt(0); avatar.style.color = '#fff'; avatar.style.background = 'linear-gradient(135deg,var(--primary),var(--accent))'; };
+            avatar.appendChild(img);
+        }
+
+        var body = document.createElement('div'); body.className = 'message-body';
+        var bubble = document.createElement('div'); bubble.className = 'message-bubble';
+        if (m.typing) {
+            var dots = document.createElement('span'); dots.className = 'typing';
+            dots.innerHTML = '<i></i><i></i><i></i>';
+            bubble.appendChild(dots);
+        } else {
+            bubble.textContent = m.content || '';
+        }
+        var time = document.createElement('div'); time.className = 'message-time';
+        time.textContent = (m.proactive ? '主动发来 · ' : '') + formatTime(Date.now());
+        body.appendChild(bubble); body.appendChild(time);
+
+        row.appendChild(avatar); row.appendChild(body);
+        return row;
+    }
+
+    function renderMessages() {
+        messagesBox.innerHTML = '';
+        var conv = state.conversations[state.currentId];
+        var a = curAgent();
+        if (!conv || conv.messages.length === 0) {
+            var empty = document.createElement('div'); empty.className = 'empty';
+            empty.textContent = '和「' + (a ? a.name : '') + '」说点什么吧';
+            messagesBox.appendChild(empty);
+            return;
+        }
+        conv.messages.forEach(function (m) { messagesBox.appendChild(buildBubble(m)); });
+        scrollToBottom();
+    }
+
+    function scrollToBottom() { messagesBox.scrollTop = messagesBox.scrollHeight; }
+    function formatTime(ts) {
+        var d = new Date(Number(ts));
+        return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+    }
+
+    // ---------- 选择角色 ----------
+    async function selectAgent(id) {
+        if (state.streaming) return;
+        state.currentId = id;
+        applyTheme(id);
+        renderSwitcher();
+        renderPanels();
+        if (!state.conversations[id]) state.conversations[id] = { messages: [], loaded: false };
+        if (!state.conversations[id].loaded) {
+            renderMessages();
+            try {
+                var data = await api('/agents/' + id + '/history');
+                state.conversations[id].messages = data.messages || [];
+            } catch (e) { state.conversations[id].messages = []; }
+            state.conversations[id].loaded = true;
+        }
+        // 拉取主动消息: 展示未读的, 然后标记已读
+        try {
+            var inbox = await api('/agents/' + id + '/inbox');
+            var unreadMsgs = (inbox.messages || []).filter(function (m) { return !m.read; });
+            if (unreadMsgs.length > 0) {
+                unreadMsgs.forEach(function (m) {
+                    state.conversations[id].messages.push({ role: 'assistant', content: m.content, proactive: true });
+                });
+                await api('/agents/' + id + '/inbox/read', { method: 'POST' });
+                state.unread[id] = 0;
+            }
+        } catch (e) {}
+        if (state.currentId === id) renderMessages();
+    }
+
+    // ---------- 发送 ----------
+    function updateComposer() {
+        sendBtn.disabled = state.streaming || !input.value.trim();
+        input.disabled = state.streaming;
+    }
+    async function send() {
+        var text = input.value.trim();
+        if (!text || state.streaming || !state.currentId) return;
+        input.value = '';
+        var conv = state.conversations[state.currentId];
+        conv.messages.push({ role: 'user', content: text });
+        var assistantMsg = { role: 'assistant', content: '', typing: true };
+        conv.messages.push(assistantMsg);
+        state.streaming = true;
+        updateComposer();
+        renderMessages();
+        var bubbleEl = messagesBox.lastElementChild ? messagesBox.lastElementChild.querySelector('.message-bubble') : null;
+
+        try {
+            var resp = await fetch('/chat', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ agent_id: state.currentId, question: text })
+            });
+            if (!resp.ok || !resp.body) throw new Error('HTTP ' + resp.status);
+            var reader = resp.body.getReader(), decoder = new TextDecoder(), buffer = '';
+            while (true) {
+                var chunk = await reader.read();
+                if (chunk.done) break;
+                buffer += decoder.decode(chunk.value, { stream: true });
+                var lines = buffer.split('\n'); buffer = lines.pop() || '';
+                for (var i = 0; i < lines.length; i++) {
+                    if (lines[i].indexOf('data: ') !== 0) continue;
+                    try {
+                        var data = JSON.parse(lines[i].slice(6));
+                        if (data.done) continue;
+                        if (data.content !== undefined) {
+                            if (assistantMsg.typing) { assistantMsg.typing = false; if (bubbleEl) bubbleEl.textContent = ''; }
+                            assistantMsg.content += data.content;
+                            if (bubbleEl) bubbleEl.textContent = assistantMsg.content;
+                            scrollToBottom();
+                        }
+                    } catch (e) {}
+                }
+            }
+        } catch (e) {
+            assistantMsg.content = assistantMsg.content || ('（发送失败：' + e.message + '）');
+            assistantMsg.typing = false;
+            if (bubbleEl) bubbleEl.textContent = assistantMsg.content;
+        } finally {
+            state.streaming = false;
+            if (assistantMsg.typing) { assistantMsg.typing = false; renderMessages(); }
+            updateComposer();
+            scrollToBottom();
+            // 好感度可能已变, 刷新角色信息
+            refreshAgents();
+        }
+    }
+
+    async function refreshAgents() {
+        try {
+            var data = await api('/agents');
+            state.agents = data.agents || [];
+            renderSwitcher();
+            renderPanels();
+        } catch (e) {}
+    }
+
+    input.addEventListener('input', updateComposer);
+    input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); send(); } });
+    sendBtn.addEventListener('click', send);
+    $('resetBtn').addEventListener('click', async function () {
+        if (!confirm('确定初始化所有角色吗？\n将清空全部对话记录、记忆和好感度，回到最初状态。')) return;
+        try {
+            await api('/reset', { method: 'POST' });
+            location.reload();
+        } catch (e) {
+            alert('初始化失败：' + e.message);
+        }
+    });
+
+    // ---------- 启动 ----------
+    async function init() {
+        updateComposer();
+        try {
+            var data = await api('/agents');
+            state.agents = data.agents || [];
+            if (state.agents.length > 0) await selectAgent(state.agents[0].id);
+        } catch (e) {
+            $('chatTitle').textContent = '服务未连接';
+        }
+        loadWorld();
+        setInterval(loadWorld, 60 * 1000);
+        setInterval(refreshAgents, 15 * 1000);
+        loadInbox();
+        setInterval(loadInbox, 30 * 1000);
+    }
+    init();
+})();
+</script>
+</body>
+</html>

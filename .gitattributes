@@ -1,0 +1,15 @@
+# 统一换行符: 文本用 LF, Windows 批处理用 CRLF
+* text=auto eol=lf
+
+# 批处理脚本必须是 CRLF, 否则 Windows 下可能解析异常
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制资源不做换行转换
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.sqlite3 binary

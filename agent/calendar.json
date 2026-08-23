@@ -1,0 +1,13 @@
+{
+  "special_dates": [
+    {"month": 1, "day": 1, "name": "元旦", "description": "新年的第一天"},
+    {"month": 2, "day": 14, "name": "情人节", "description": "表达爱意的日子"},
+    {"month": 3, "day": 8, "name": "妇女节", "description": "国际妇女节"},
+    {"month": 5, "day": 1, "name": "劳动节", "description": "五一假期"},
+    {"month": 6, "day": 1, "name": "儿童节", "description": "儿童节日"},
+    {"month": 10, "day": 1, "name": "国庆节", "description": "国庆假期"},
+    {"month": 12, "day": 24, "name": "平安夜", "description": "圣诞节前夜"},
+    {"month": 12, "day": 25, "name": "圣诞节", "description": "圣诞节"},
+    {"month": 12, "day": 31, "name": "跨年夜", "description": "一年的最后一天"}
+  ]
+}

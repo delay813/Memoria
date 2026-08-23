@@ -1,0 +1,22 @@
+# ============================================================
+# 依赖清单 (Python 3.9+)
+# 安装: python -m pip install -r requirements.txt
+#
+# 说明: 直接依赖已锁定为当前验证可运行的版本, 避免版本漂移导致跑不起来。
+#       如需完整可复现环境, 可另存锁定文件:  pip freeze > requirements.lock
+# ============================================================
+
+# 阿里云百炼(DashScope) 模型调用 SDK: 对话 / 向量 / 重排
+dashscope==1.27.0
+
+# 长期记忆向量库(Chroma) + 嵌入
+langchain-core==1.6.0
+langchain-community==0.4.2
+langchain-chroma==1.1.0
+chromadb==1.5.9
+
+# Web 服务框架
+fastapi==0.141.1
+
+# Web 启动器
+uvicorn==0.52.4

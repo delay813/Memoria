@@ -1,0 +1,19 @@
+# ============================================================
+# 工具链配置(ruff / pytest)
+# 本项目不是可 pip 安装的包, 此文件仅用于统一开发工具行为。
+# ============================================================
+
+[tool.ruff]
+target-version = "py39"
+line-length = 110
+extend-exclude = [".venv", "agent/agents", "agent/__pycache__"]
+
+[tool.ruff.lint]
+# 只报 pyflakes 类真正错误(未定义名称 / 未使用导入), 不做风格强制
+select = ["F"]
+
+[tool.pytest.ini_options]
+# 让测试能 import agent/ 目录下的模块(如 fact_memory)
+pythonpath = ["agent"]
+testpaths = ["tests"]
+addopts = "-q"
