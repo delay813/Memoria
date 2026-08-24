@@ -4,456 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>心忆 · Memoria</title>
-    <style>
-        :root {
-            --sidebar-bg: #0f1429;
-            --sidebar-width: 340px;
-            --panel-bg: rgba(255, 255, 255, 0.78);
-            --panel-border: rgba(255, 255, 255, 0.45);
-            --glass-shadow: 0 8px 32px rgba(15, 23, 42, 0.18);
-            --primary: #5b7cff;
-            --primary-soft: #8aa4ff;
-            --accent: #b794f6;
-            --text-dark: #1e293b;
-            --text-muted: #64748b;
-            --text-light: #94a3b8;
-            --user-bubble: linear-gradient(135deg, #5b7cff 0%, #7c6dfc 100%);
-            --ai-bubble: rgba(255, 255, 255, 0.9);
-        }
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-            background: var(--sidebar-bg); color: var(--text-dark);
-            height: 100vh; overflow: hidden;
-            transition: background 0.4s ease;
-            -webkit-font-smoothing: antialiased;
-        }
-        .app-container { display: flex; height: 100vh; width: 100vw; }
-
-        /* ---------- 左侧导航 ---------- */
-        .sidebar {
-            width: var(--sidebar-width); min-width: var(--sidebar-width);
-            background: var(--sidebar-bg); display: flex; flex-direction: column;
-            padding: 22px 16px; position: relative; z-index: 10;
-            transition: background 0.4s ease;
-        }
-        .sidebar::after {
-            content: ''; position: absolute; top: 0; right: 0; width: 1px; height: 100%;
-            background: linear-gradient(180deg, transparent, rgba(255,255,255,0.08), transparent);
-        }
-        .brand {
-            display: flex; align-items: center; gap: 10px; padding: 0 8px 18px;
-            color: white; font-size: 16px; font-weight: 700; letter-spacing: 2px;
-        }
-        .brand::before {
-            content: ''; width: 9px; height: 9px; border-radius: 50%;
-            background: linear-gradient(135deg, var(--primary), var(--accent));
-            box-shadow: 0 0 10px var(--primary);
-        }
-        .char-label {
-            padding: 0 8px 10px; font-size: 11px; color: rgba(255,255,255,0.35);
-            letter-spacing: 2px;
-        }
-        .character-switcher { display: flex; flex-direction: column; gap: 8px; padding: 0 2px; }
-        .cs-item {
-            display: flex; align-items: center; gap: 12px;
-            padding: 9px 12px; border-radius: 14px; cursor: pointer;
-            transition: all 0.25s ease; border: 1px solid transparent;
-            color: var(--text-light); font-size: 14px; font-weight: 500;
-        }
-        .cs-item:hover { background: rgba(255,255,255,0.08); color: white; transform: translateX(3px); }
-        .cs-item.active {
-            background: linear-gradient(90deg, rgba(91,124,255,0.28), rgba(183,148,246,0.12));
-            color: white; border-color: var(--primary-soft);
-        }
-        .cs-avatar {
-            width: 52px; height: 52px; border-radius: 12px; object-fit: cover; flex-shrink: 0;
-            border: 2px solid rgba(255,255,255,0.25); transition: all 0.25s ease; background: #2a3350;
-        }
-        .cs-item.active .cs-avatar { border-color: rgba(255,255,255,0.7); box-shadow: 0 4px 14px rgba(0,0,0,0.3); }
-        .cs-meta { min-width: 0; flex: 1; }
-        .cs-name { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
-        .cs-status {
-            display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 600;
-            background: rgba(34,197,94,0.16); color: #4ade80; border: 1px solid rgba(34,197,94,0.28); flex-shrink: 0;
-        }
-        .cs-status.busy { background: rgba(245,158,11,0.16); color: #fbbf24; border-color: rgba(245,158,11,0.28); }
-        .cs-favor { font-size: 11px; color: var(--text-light); margin-top: 2px; }
-        .unread-badge {
-            margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px;
-            border-radius: 9px; background: #ef4444; color: #fff; font-size: 11px;
-            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-        }
-        .sidebar-foot {
-            margin-top: auto; padding: 14px 8px 0; border-top: 1px solid rgba(255,255,255,0.07);
-            font-size: 11px; color: rgba(255,255,255,0.55); line-height: 1.7;
-        }
-        .world-date { font-weight: 600; color: rgba(255,255,255,0.85); font-size: 12px; }
-        .world-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
-        .world-tags:empty { display: none; }
-        .tag-mini {
-            font-size: 10px; padding: 2px 8px; border-radius: 999px;
-            background: rgba(255,255,255,0.1); color: var(--primary-soft);
-        }
-        .life-title { margin-top: 14px; font-size: 10px; letter-spacing: 2px; color: rgba(255,255,255,0.35); }
-        .life-feed { margin-top: 7px; display: flex; flex-direction: column; gap: 5px; }
-        .life-feed:empty { display: none; }
-        .life-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: rgba(255,255,255,0.82); }
-        .life-status {
-            font-size: 10px; padding: 1px 7px; border-radius: 999px;
-            background: rgba(34,197,94,0.16); color: #4ade80; border: 1px solid rgba(34,197,94,0.28);
-        }
-        .life-status.busy { background: rgba(245,158,11,0.16); color: #fbbf24; border-color: rgba(245,158,11,0.28); }
-        .life-event { font-size: 10.5px; color: rgba(255,255,255,0.55); line-height: 1.5; padding-left: 4px; }
-        .life-event.nar { color: rgba(255,255,255,0.38); font-style: italic; }
-        .world-time { margin-top: 3px; font-size: 12px; color: var(--primary-soft); font-weight: 600; letter-spacing: 1px; }
-        .world-day { margin-top: 2px; font-size: 10px; color: rgba(255,255,255,0.4); }
-        .nickname-row { display: flex; gap: 6px; margin-top: 10px; }
-        .nickname-input {
-            flex: 1; min-width: 0; padding: 7px 10px; border-radius: 10px;
-            border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.06);
-            color: #fff; font-size: 12px; outline: none;
-        }
-        .nickname-input::placeholder { color: rgba(255,255,255,0.35); }
-        .nickname-save {
-            padding: 0 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.16);
-            background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85); font-size: 12px;
-            cursor: pointer; transition: all .2s; flex-shrink: 0;
-        }
-        .nickname-save:hover { background: rgba(255,255,255,0.16); color: #fff; }
-        .sidebar-icon-btn.on { background: rgba(91,124,255,0.2); border-color: var(--primary-soft); color: #fff; }
-        .schedule-card { padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); }
-        .schedule-title { font-size: 11px; color: rgba(255,255,255,0.6); letter-spacing: 1px; margin-bottom: 8px; }
-        .schedule-list { display: flex; flex-direction: column; gap: 4px; }
-        .schedule-item { display: flex; align-items: center; gap: 8px; font-size: 11px; color: rgba(255,255,255,0.72); padding: 3px 6px; border-radius: 8px; }
-        .schedule-item .s-time { width: 84px; flex-shrink: 0; color: rgba(255,255,255,0.42); font-variant-numeric: tabular-nums; }
-        .schedule-item .s-label { flex: 1; }
-        .schedule-item .s-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(148,163,184,0.4); flex-shrink: 0; }
-        .schedule-item.current { background: rgba(91,124,255,0.18); color: #fff; border: 1px solid rgba(91,124,255,0.35); }
-        .schedule-item.current .s-time { color: var(--primary-soft); }
-        .schedule-item.current .s-dot { background: #4ade80; box-shadow: 0 0 6px #4ade80; }
-        .reset-btn {
-            width: 100%; margin-top: 12px; padding: 8px 0;
-            background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
-            border-radius: 12px; color: rgba(255,255,255,0.5); font-size: 12px;
-            cursor: pointer; letter-spacing: 1px; transition: all 0.2s;
-        }
-        .reset-btn:hover {
-            background: rgba(239,68,68,0.15); border-color: rgba(239,68,68,0.4); color: #fca5a5;
-        }
-
-        /* ---------- 中间主舞台 ---------- */
-        .main-stage { flex: 1; position: relative; display: flex; overflow: hidden; min-width: 0; }
-        .stage-background { position: absolute; inset: 0; z-index: 0; transition: opacity 0.5s ease; }
-        .stage-background img { width: 100%; height: 100%; object-fit: cover; object-position: center top; }
-        .stage-overlay {
-            position: absolute; inset: 0; z-index: 1;
-            background: linear-gradient(90deg,
-                rgba(15,20,41,0.55) 0%, rgba(15,20,41,0.28) 35%,
-                rgba(15,20,41,0.15) 55%, rgba(15,20,41,0.45) 100%);
-        }
-        .stage-content {
-            position: relative; z-index: 2; flex: 1; display: flex;
-            padding: 16px 20px; gap: 18px; min-width: 0;
-        }
-
-        /* ---------- 聊天面板 ---------- */
-        .chat-panel {
-            flex: 1; width: 100%; min-width: 360px; display: flex; flex-direction: column;
-            background: var(--panel-bg); border: 1px solid var(--panel-border); border-radius: 26px;
-            box-shadow: var(--glass-shadow); backdrop-filter: blur(24px); overflow: hidden;
-        }
-        .chat-header {
-            padding: 16px 24px; border-bottom: 1px solid rgba(148,163,184,0.16);
-            display: flex; justify-content: space-between; align-items: center;
-            background: rgba(255,255,255,0.4);
-        }
-        .chat-title { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 600; color: var(--text-dark); }
-        .chat-title .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 8px var(--primary); }
-        .chat-favor {
-            font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 8px;
-        }
-        .favor-bar {
-            width: 90px; height: 6px; border-radius: 4px; background: rgba(148,163,184,0.2); overflow: hidden;
-        }
-        .favor-bar i { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: width 0.5s ease; }
-
-        .messages-container {
-            flex: 1; overflow-y: auto; padding: 24px 28px;
-            display: flex; flex-direction: column; gap: 20px;
-        }
-        .empty { margin: auto; text-align: center; color: var(--text-light); font-size: 13px; line-height: 2; }
-        .message { display: flex; gap: 12px; animation: fadeIn 0.3s ease; max-width: 90%; }
-        .message.user { align-self: flex-end; flex-direction: row-reverse; }
-        .message.assistant { align-self: flex-start; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .avatar {
-            width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0; overflow: hidden;
-            border: 2px solid rgba(255,255,255,0.6); background: #e2e8f0; box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            display: flex; align-items: center; justify-content: center; font-size: 16px; font-weight: 700;
-            color: var(--text-muted);
-        }
-        .avatar img { width: 100%; height: 100%; object-fit: cover; }
-        .message-body { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
-        .message.user .message-body { align-items: flex-end; }
-        .message-bubble {
-            padding: 12px 16px; border-radius: 18px; font-size: 14.5px; line-height: 1.7;
-            word-wrap: break-word; white-space: pre-wrap; box-shadow: 0 2px 12px rgba(0,0,0,0.06);
-        }
-        .message.user .message-bubble { background: var(--user-bubble); color: white; border-bottom-right-radius: 5px; }
-        .message.assistant .message-bubble { background: var(--ai-bubble); color: var(--text-dark); border-bottom-left-radius: 5px; }
-        .message.assistant .message-bubble.delayed { background: rgba(226,232,240,0.55); color: var(--text-muted); font-style: italic; }
-        .message-time { font-size: 11px; color: var(--text-muted); padding: 0 4px; }
-        .typing { display: inline-flex; gap: 5px; padding: 4px 2px; }
-        .typing i { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); animation: blink 1.2s infinite ease-in-out; }
-        .typing i:nth-child(2) { animation-delay: 0.15s; }
-        .typing i:nth-child(3) { animation-delay: 0.3s; }
-        @keyframes blink { 0%,80%,100% { opacity: 0.25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
-
-        /* ---------- 输入区 ---------- */
-        .input-area { padding: 14px 24px 20px; border-top: 1px solid rgba(148,163,184,0.16); background: rgba(255,255,255,0.45); }
-        .input-wrapper {
-            display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.92);
-            border: 1px solid rgba(148,163,184,0.25); border-radius: 22px; padding: 5px 5px 5px 16px;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.04); transition: all 0.3s;
-        }
-        .input-wrapper:focus-within { border-color: var(--primary-soft); box-shadow: 0 4px 20px rgba(91,124,255,0.12); }
-        .input-wrapper input {
-            flex: 1; border: none; outline: none; color: var(--text-dark); font-size: 14px;
-            line-height: 1.5; padding: 8px 0; background: transparent;
-        }
-        .input-wrapper input::placeholder { color: var(--text-light); }
-        .send-btn {
-            width: 40px; height: 40px; border-radius: 13px; border: none; flex-shrink: 0;
-            background: linear-gradient(135deg, var(--primary) 0%, var(--accent) 100%);
-            color: white; cursor: pointer; display: flex; align-items: center; justify-content: center;
-            font-size: 19px; transition: all 0.3s;
-        }
-        .send-btn:hover:not(:disabled) { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(91,124,255,0.35); }
-        .send-btn:disabled { background: #cbd5e1; cursor: not-allowed; }
-
-        /* ---------- 右侧角色卡 ---------- */
-        .character-panel { width: 420px; min-width: 420px; display: flex; flex-direction: column; }
-        .character-card {
-            background: rgba(15, 20, 41, 0.55); backdrop-filter: blur(20px);
-            border: 1px solid rgba(255,255,255,0.12); border-radius: 22px; padding: 16px;
-            color: white; box-shadow: 0 12px 40px rgba(0,0,0,0.25);
-            display: flex; flex-direction: column; gap: 12px;
-            max-height: 100%; overflow-y: auto;
-        }
-        .character-image-wrap {
-            /* 固定高度 + 禁止 flex 压缩: 避免被下方组件挤压/遮挡, 超出的内容在卡片内滚动 */
-            width: 100%; height: min(44vh, 360px); flex-shrink: 0; border-radius: 16px; overflow: hidden;
-            border: 1px solid rgba(255,255,255,0.12); box-shadow: 0 8px 24px rgba(0,0,0,0.25);
-            background: #1a2338;
-        }
-        .character-image-wrap img { width: 100%; height: 100%; object-fit: cover; object-position: center top; }
-        .character-names h2 { font-size: 19px; font-weight: 700; }
-        .character-names p { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 3px; }
-        .character-names p.card-status { color: var(--primary-soft); }
-        .character-tags { display: flex; flex-wrap: wrap; gap: 6px; }
-        .tag {
-            padding: 4px 9px; border-radius: 10px; font-size: 10px;
-            background: rgba(91,124,255,0.15); color: var(--primary-soft); border: 1px solid rgba(91,124,255,0.2);
-        }
-        .character-desc { font-size: 12.5px; color: rgba(255,255,255,0.75); line-height: 1.7; }
-        .favor-card {
-            padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,0.07);
-            border: 1px solid rgba(255,255,255,0.08);
-        }
-        .favor-card .row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; margin-bottom: 8px; }
-        .favor-card .row .label { color: rgba(255,255,255,0.6); }
-        .favor-card .row .value { font-weight: 700; color: var(--primary-soft); }
-        .favor-card .bar { height: 8px; border-radius: 5px; background: rgba(255,255,255,0.12); overflow: hidden; }
-        .favor-card .bar i { display: block; height: 100%; border-radius: 5px; background: linear-gradient(90deg, var(--primary), var(--accent)); transition: width 0.5s ease; }
-        .quote-box {
-            padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,0.05);
-            border-left: 3px solid var(--primary); font-size: 11.5px; color: rgba(255,255,255,0.6);
-            line-height: 1.7; font-style: italic;
-        }
-        .diary-btn {
-            width: 100%; margin-top: 12px; padding: 10px; border-radius: 14px;
-            background: linear-gradient(135deg, var(--primary), var(--accent));
-            color: #fff; border: none; font-size: 13px; font-weight: 600; cursor: pointer;
-            transition: opacity 0.2s ease;
-        }
-        .diary-btn:hover { opacity: 0.85; }
-
-        /* 回忆日记弹窗 */
-        .diary-modal {
-            position: fixed; inset: 0; background: rgba(0,0,0,0.55); display: none;
-            align-items: center; justify-content: center; z-index: 100;
-        }
-        .diary-modal.open { display: flex; }
-        .diary-panel {
-            width: min(560px, 90vw); max-height: 80vh; overflow-y: auto;
-            background: #141a2e; border-radius: 16px; padding: 22px;
-            border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 16px 48px rgba(0,0,0,0.4);
-        }
-        .diary-panel h3 { font-size: 16px; margin: 0 0 6px; }
-        .diary-panel .diary-sub { font-size: 11px; color: rgba(255,255,255,0.5); margin-bottom: 14px; }
-        .diary-day { padding: 14px; border-radius: 12px; background: rgba(255,255,255,0.05); margin-bottom: 10px; border: 1px solid rgba(255,255,255,0.07); }
-        .diary-day .d-date { font-size: 13px; font-weight: 700; color: var(--primary-soft); margin-bottom: 6px; }
-        .diary-day .d-summary { font-size: 12.5px; color: rgba(255,255,255,0.85); line-height: 1.7; }
-        .diary-day .d-list { font-size: 11.5px; color: rgba(255,255,255,0.65); line-height: 1.6; margin: 6px 0 0; padding-left: 18px; }
-        .diary-close {
-            float: right; background: rgba(255,255,255,0.1); border: none; color: #fff;
-            width: 28px; height: 28px; border-radius: 8px; cursor: pointer; font-size: 14px;
-        }
-
-        /* ---------- 心声 / 读心 / 反馈 ---------- */
-        .thought-block { display: flex; flex-direction: column; gap: 4px; margin-bottom: 2px; }
-        .thought-line { display: flex; gap: 6px; align-items: flex-start; }
-        .thought-icon { flex-shrink: 0; }
-        .thought-text { font-size: 12px; font-style: italic; color: #7c6dfc; line-height: 1.5; }
-        .read-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-        .read-chip { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; background: rgba(91,124,255,0.1); color: #5b7cff; border: 1px solid rgba(91,124,255,0.18); }
-        .read-chip.mood { background: rgba(183,148,246,0.12); color: #8b5cf6; border-color: rgba(183,148,246,0.25); }
-        .feedback-line { font-size: 11px; color: #16a34a; padding: 0 4px; margin-top: 2px; }
-        .feedback-line.down { color: #dc2626; }
-
-        /* ---------- 顶部浮动提示 ---------- */
-        .toast-wrap { position: fixed; top: 18px; left: 50%; transform: translateX(-50%); z-index: 200; display: flex; flex-direction: column; align-items: center; gap: 8px; pointer-events: none; }
-        .toast { padding: 10px 18px; border-radius: 14px; font-size: 13px; color: #fff; box-shadow: 0 8px 24px rgba(0,0,0,0.28); background: rgba(15,20,41,0.92); animation: toastIn 0.3s ease, toastOut 0.4s ease 2.6s forwards; max-width: 80vw; }
-        .toast.up { background: linear-gradient(135deg, rgba(22,163,74,0.95), rgba(16,185,129,0.95)); }
-        .toast.down { background: linear-gradient(135deg, rgba(220,38,38,0.95), rgba(244,63,94,0.95)); }
-        .toast.milestone { background: linear-gradient(135deg, rgba(124,109,252,0.95), rgba(183,148,246,0.95)); font-weight: 600; padding: 12px 22px; font-size: 14px; }
-        @keyframes toastIn { from { opacity: 0; transform: translateY(-12px); } to { opacity: 1; transform: translateY(0); } }
-        @keyframes toastOut { to { opacity: 0; transform: translateY(-12px); } }
-
-        /* ---------- 头部工具 / 记忆卡 ---------- */
-        .toggle-btn { padding: 5px 10px; border-radius: 999px; font-size: 11px; cursor: pointer; border: 1px solid rgba(148,163,184,0.3); background: rgba(255,255,255,0.6); color: var(--text-muted); transition: all 0.2s; }
-        .toggle-btn.on { background: var(--primary); border-color: var(--primary); color: #fff; }
-        .memory-btn { width: 100%; margin-top: 8px; padding: 10px; border-radius: 14px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.16); color: #fff; font-size: 13px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
-        .memory-btn:hover { background: rgba(255,255,255,0.16); }
-        .memory-section { margin-bottom: 16px; }
-        .memory-section h4 { font-size: 12px; color: rgba(255,255,255,0.55); margin-bottom: 8px; letter-spacing: 1px; }
-        .memory-profile { font-size: 13px; color: rgba(255,255,255,0.88); line-height: 1.8; }
-        .memory-facts { display: flex; flex-wrap: wrap; gap: 6px; }
-        .memory-fact { font-size: 12px; padding: 5px 10px; border-radius: 10px; background: rgba(91,124,255,0.14); color: var(--primary-soft); border: 1px solid rgba(91,124,255,0.2); }
-        .memory-meta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
-        .memory-meta .chip { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.85); }
-
-        /* ---------- 话题卡 / 成就墙 ---------- */
-        .quick-row { display: flex; align-items: center; gap: 8px; padding: 0 2px 8px; flex-wrap: wrap; }
-        .quick-row:empty { display: none; }
-        .topic-chip {
-            display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px; font-size: 12.5px;
-            cursor: pointer; border: 1px dashed rgba(91,124,255,0.4); background: rgba(91,124,255,0.06); color: #5b7cff; transition: all 0.2s;
-        }
-        .topic-chip:hover { background: rgba(91,124,255,0.14); }
-        .topic-refresh { padding: 6px 10px; border-radius: 999px; font-size: 11px; cursor: pointer; border: 1px solid rgba(148,163,184,0.25); background: rgba(255,255,255,0.6); color: var(--text-muted); }
-        .topic-refresh:hover { color: var(--primary); border-color: var(--primary-soft); }
-        .sidebar-icon-btn {
-            width: 100%; margin-top: 8px; padding: 8px 0; background: rgba(255,255,255,0.05);
-            border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; color: rgba(255,255,255,0.65);
-            font-size: 12px; cursor: pointer; letter-spacing: 1px; transition: all 0.2s;
-        }
-        .sidebar-icon-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
-        .achievement-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
-        .achievement-item { padding: 14px; border-radius: 12px; text-align: center; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.07); }
-        .achievement-item .a-emoji { font-size: 26px; }
-        .achievement-item .a-label { font-size: 13px; font-weight: 700; margin-top: 6px; color: #fff; }
-        .achievement-item .a-desc { font-size: 11px; color: rgba(255,255,255,0.5); margin-top: 4px; line-height: 1.5; }
-        .achievement-item.locked { opacity: 0.45; filter: grayscale(0.85); }
-        .achievement-item.unlocked { border-color: rgba(183,148,246,0.5); background: rgba(183,148,246,0.12); }
-        .diary-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 8px; }
-        .diary-tag { font-size: 10.5px; padding: 2px 8px; border-radius: 999px; background: rgba(91,124,255,0.14); color: var(--primary-soft); }
-        .diary-favor { font-size: 11px; color: rgba(255,255,255,0.55); margin-top: 8px; }
-
-        /* 滚动条 */
-        .messages-container::-webkit-scrollbar { width: 6px; }
-        .messages-container::-webkit-scrollbar-thumb { background: rgba(148,163,184,0.35); border-radius: 3px; }
-
-        /* ============================================================
-           放大模式: 整体增大字号与组件尺寸(覆盖上方默认值, 便于阅读)
-           ============================================================ */
-        :root { --sidebar-width: 364px; }
-        /* 侧栏 */
-        .brand { font-size: 18px; }
-        .char-label { font-size: 12.5px; }
-        .cs-item { padding: 11px 12px; font-size: 16px; }
-        .cs-avatar { width: 58px; height: 58px; }
-        .cs-name { font-size: 16px; }
-        .cs-status { font-size: 11.5px; padding: 2px 8px; }
-        .cs-favor { font-size: 13px; }
-        .unread-badge { min-width: 21px; height: 21px; border-radius: 11px; font-size: 12px; }
-        .sidebar-foot { font-size: 12.5px; }
-        .world-date { font-size: 14px; }
-        .world-time { font-size: 14px; }
-        .world-day { font-size: 12px; }
-        .tag-mini { font-size: 12px; padding: 3px 9px; }
-        .life-title { font-size: 12px; }
-        .life-item { font-size: 13px; }
-        .life-status { font-size: 11.5px; }
-        .life-event { font-size: 12px; }
-        .nickname-input { font-size: 14px; padding: 9px 12px; }
-        .nickname-save { font-size: 13px; }
-        .schedule-title { font-size: 12.5px; }
-        .schedule-item { font-size: 12.5px; }
-        .schedule-item .s-time { width: 92px; }
-        .reset-btn { font-size: 13px; padding: 10px 0; }
-        .sidebar-icon-btn { font-size: 13px; padding: 10px 0; }
-        /* 聊天面板 */
-        .chat-title { font-size: 17px; }
-        .chat-favor { font-size: 13px; }
-        .empty { font-size: 15px; }
-        .message { gap: 13px; }
-        .avatar { width: 46px; height: 46px; font-size: 18px; }
-        .message-bubble { font-size: 16.5px; padding: 13px 17px; }
-        .message-time { font-size: 12px; }
-        .input-wrapper { padding: 7px 7px 7px 18px; border-radius: 24px; }
-        .input-wrapper input { font-size: 16px; }
-        .send-btn { width: 46px; height: 46px; border-radius: 15px; font-size: 22px; }
-        /* 角色卡 */
-        .character-panel { width: 440px; min-width: 440px; }
-        .character-names h2 { font-size: 22px; }
-        .character-names p { font-size: 12.5px; }
-        .tag { font-size: 12px; padding: 5px 10px; }
-        .character-desc { font-size: 14px; }
-        .favor-card .row { font-size: 13.5px; }
-        .quote-box { font-size: 13px; }
-        .diary-btn { font-size: 15px; padding: 12px; }
-        .memory-btn { font-size: 15px; padding: 12px; }
-        /* 心声 / 反馈 */
-        .thought-text { font-size: 13.5px; }
-        .read-chip { font-size: 12px; }
-        .feedback-line { font-size: 12.5px; }
-        /* 顶部浮动提示 */
-        .toast { font-size: 15px; padding: 12px 20px; }
-        .toast.milestone { font-size: 16px; padding: 14px 24px; }
-        /* 头部工具 / 记忆卡 */
-        .toggle-btn { font-size: 12.5px; padding: 6px 12px; }
-        .memory-section h4 { font-size: 13.5px; }
-        .memory-profile { font-size: 15px; }
-        .memory-fact { font-size: 13.5px; }
-        .memory-meta .chip { font-size: 13.5px; }
-        /* 话题卡 / 成就墙 */
-        .topic-chip { font-size: 14px; padding: 8px 14px; }
-        .topic-refresh { font-size: 12.5px; padding: 7px 12px; }
-        .achievement-item .a-emoji { font-size: 30px; }
-        .achievement-item .a-label { font-size: 15px; }
-        .achievement-item .a-desc { font-size: 12.5px; }
-        /* 弹窗 */
-        .diary-panel h3 { font-size: 18px; }
-        .diary-panel .diary-sub { font-size: 12.5px; }
-        .diary-day .d-date { font-size: 15px; }
-        .diary-day .d-summary { font-size: 14px; }
-        .diary-day .d-list { font-size: 13px; }
-        .diary-close { width: 32px; height: 32px; font-size: 16px; }
-        .diary-tag { font-size: 12px; }
-        .diary-favor { font-size: 12.5px; }
-
-        @media (max-width: 1180px) { .character-panel { display: none; } }
-        @media (max-width: 768px) {
-            .sidebar { display: none; }
-            .chat-panel { border-radius: 0; margin: 0; min-width: auto; background: rgba(255,255,255,0.92); }
-            .messages-container { padding: 16px; }
-            .input-area { padding: 12px 14px 16px; }
-        }
-    </style>
+    <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+    <link rel="stylesheet" href="/static/theme.css">
 </head>
 <body>
+<div class="petals" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
 <div class="app-container">
     <!-- 左侧导航 -->
     <aside class="sidebar">
@@ -471,9 +26,9 @@
                 <input class="nickname-input" id="nicknameInput" placeholder="你的昵称（她会这样叫你）" maxlength="20">
                 <button class="nickname-save" id="nicknameSave">保存</button>
             </div>
-            <button class="sidebar-icon-btn" id="notifyBtn">🔔 桌面通知</button>
-            <button class="sidebar-icon-btn" id="achieveBtn">🎖 成就图鉴</button>
-            <button class="reset-btn" id="resetBtn">初始化所有角色</button>
+            <button class="sidebar-icon-btn" id="notifyBtn"><i class="bi bi-bell"></i>桌面通知</button>
+            <button class="sidebar-icon-btn" id="achieveBtn"><i class="bi bi-trophy"></i>成就图鉴</button>
+            <button class="reset-btn" id="resetBtn"><i class="bi bi-arrow-counterclockwise"></i>初始化所有角色</button>
         </div>
     </aside>
 
@@ -487,17 +42,18 @@
                 <div class="chat-header">
                     <div class="chat-title"><span class="dot"></span><span id="chatTitle">—</span></div>
                     <div class="chat-favor">
-                        <button class="toggle-btn on" id="thoughtToggle" title="显示 / 隐藏角色的内心独白">💭 心声</button>
+                        <button class="toggle-btn on" id="thoughtToggle" title="显示 / 隐藏角色的内心独白"><i class="bi bi-chat-square-heart"></i>心声</button>
                         <span id="chatFavorText">—</span>
                         <div class="favor-bar"><i id="chatFavorBar" style="width:0%"></i></div>
                     </div>
                 </div>
                 <div class="messages-container" id="messages"></div>
+                <button class="scroll-bottom-btn" id="scrollBottomBtn" title="回到底部" aria-label="回到底部"><i class="bi bi-chevron-down"></i></button>
                 <div class="input-area">
                     <div class="quick-row" id="topicRow"></div>
                     <div class="input-wrapper">
                         <input id="input" placeholder="说点什么…（Enter 发送）" autofocus>
-                        <button class="send-btn" id="sendBtn" title="发送">↑</button>
+                        <button class="send-btn" id="sendBtn" title="发送" aria-label="发送"><i class="bi bi-send-fill"></i></button>
                     </div>
                 </div>
             </div>
@@ -522,8 +78,8 @@
                         <div class="schedule-list" id="scheduleList"></div>
                     </div>
                     <div class="quote-box" id="cardQuote">—</div>
-                    <button class="diary-btn" id="diaryBtn">回忆日记</button>
-                    <button class="memory-btn" id="memoryBtn">她眼中的你</button>
+                    <button class="diary-btn" id="diaryBtn"><i class="bi bi-journal-bookmark"></i>回忆日记</button>
+                    <button class="memory-btn" id="memoryBtn"><i class="bi bi-heart"></i>她眼中的你</button>
                 </div>
             </div>
         </div>
@@ -533,7 +89,7 @@
 <!-- 回忆日记弹窗 -->
 <div class="diary-modal" id="diaryModal">
     <div class="diary-panel">
-        <button class="diary-close" id="diaryClose">✕</button>
+        <button class="diary-close" id="diaryClose" aria-label="关闭"><i class="bi bi-x-lg"></i></button>
         <h3 id="diaryTitle">回忆日记</h3>
         <div class="diary-sub" id="diarySub">—</div>
         <div id="diaryBody"></div>
@@ -543,7 +99,7 @@
 <!-- 她眼中的你 · 记忆卡弹窗 -->
 <div class="diary-modal" id="memoryModal">
     <div class="diary-panel">
-        <button class="diary-close" id="memoryClose">✕</button>
+        <button class="diary-close" id="memoryClose" aria-label="关闭"><i class="bi bi-x-lg"></i></button>
         <h3 id="memoryTitle">她眼中的你</h3>
         <div class="diary-sub" id="memorySub">—</div>
         <div id="memoryBody"></div>
@@ -553,7 +109,7 @@
 <!-- 成就图鉴弹窗 -->
 <div class="diary-modal" id="achieveModal">
     <div class="diary-panel">
-        <button class="diary-close" id="achieveClose">✕</button>
+        <button class="diary-close" id="achieveClose" aria-label="关闭"><i class="bi bi-x-lg"></i></button>
         <h3>🎖 成就图鉴</h3>
         <div class="diary-sub">记录你和角色的每一个特别时刻</div>
         <div class="achievement-grid" id="achieveGrid"></div>
@@ -588,6 +144,8 @@
         npc_02: { sidebar: '#2a2420', primary: '#d49a6a', soft: '#e0b48c', accent: '#8fae8b', user: 'linear-gradient(135deg,#d49a6a,#c98a8a)' },
         npc_03: { sidebar: '#1a2429', primary: '#6a9cb0', soft: '#9cc4d4', accent: '#b0a0c0', user: 'linear-gradient(135deg,#6a9cb0,#8a9ec0)' }
     };
+    // 主动消息 kind → 展示标签
+    var PROACTIVE_LABELS = { festival: '节日问候', checkin: '想念', reply: '延迟回复', milestone: '关系里程碑', reconcile: '和好' };
 
     var state = { agents: [], currentId: null, conversations: {}, world: null, streaming: false, unread: {}, showThought: true, notify: false, topics: [], topicAgent: null, topicIdx: 0, topicLoadedAt: 0, achievements: [], knownAchievements: {} };
 
@@ -599,6 +157,7 @@
     var topicRow = $('topicRow');
     var achieveBtn = $('achieveBtn'), achieveModal = $('achieveModal'), achieveGrid = $('achieveGrid');
     var notifyBtn = $('notifyBtn'), nicknameInput = $('nicknameInput'), nicknameSave = $('nicknameSave');
+    var scrollBottomBtn = $('scrollBottomBtn');
 
     function api(url, opts) {
         return fetch(url, opts).then(function (r) {
@@ -608,7 +167,8 @@
     }
 
     function vis(id) { return CHARACTERS[id] || { avatar: '', card: '', en: '', tags: [], quote: '' }; }
-    function theme(id) { return THEMES[id] || THEMES.npc_01; }
+    var DEFAULT_THEME = { sidebar: '#0f1429', primary: '#5b7cff', soft: '#8aa4ff', accent: '#b794f6', user: 'linear-gradient(135deg,#5b7cff,#7c6dfc)' };
+    function theme(id) { return THEMES[id] || DEFAULT_THEME; }
     function curAgent() {
         for (var i = 0; i < state.agents.length; i++) if (state.agents[i].id === state.currentId) return state.agents[i];
         return null;
@@ -633,7 +193,7 @@
         var d = state.world.today || '', wd = state.world.weekday || '';
         $('worldDate').textContent = d ? (d.replace(/-/g, '/') + ' · ' + wd) : '—';
         $('worldTime').textContent = state.world.now ? (state.world.now + ' · ' + (state.world.period || '')) : '—';
-        $('worldDay').textContent = '世界第 ' + (state.world.days_elapsed != null ? state.world.days_elapsed : 0) + ' 天';
+        $('worldDay').textContent = '世界第 ' + ((state.world.days_elapsed != null ? state.world.days_elapsed : 0) + 1) + ' 天';
         var tags = $('worldTags'); tags.innerHTML = '';
         (state.world.festivals || []).forEach(function (f) {
             var s = document.createElement('span'); s.className = 'tag-mini'; s.textContent = f; tags.appendChild(s);
@@ -670,7 +230,9 @@
             var unread = (data.messages || []).filter(function (m) { return !m.read; });
             if (!unread.length) return;
             var last = unread[unread.length - 1];
-            var n = new Notification(name + ' 发来消息', { body: last.content || '', tag: id + '-' + last.id });
+            var body = last.content || '';
+            if (unread.length > 1) body += '（等 ' + unread.length + ' 条新消息）';
+            var n = new Notification(name + ' 发来消息', { body: body, tag: id + '-' + last.id });
             setTimeout(function () { n.close(); }, 6000);
         }).catch(function () {});
     }
@@ -710,7 +272,7 @@
                 name.appendChild(st);
             }
             var favor = document.createElement('div'); favor.className = 'cs-favor';
-            favor.textContent = '好感度 ' + (a.favorability || 0) + ' · ' + favorStage(a.favorability || 0) + ' · ' + (a.mood || '平静');
+            favor.textContent = '好感度 ' + (a.favorability || 0) + ' · ' + (a.stage || favorStage(a.favorability || 0)) + ' · ' + (a.mood || '平静');
             meta.appendChild(name); meta.appendChild(favor);
 
             item.appendChild(img); item.appendChild(meta);
@@ -731,7 +293,7 @@
         var a = curAgent(); if (!a) return;
         var v = vis(a.id), f = a.favorability || 0;
         $('chatTitle').textContent = '与 ' + a.name + ' 的对话';
-        $('chatFavorText').textContent = '好感度 ' + f + ' · ' + favorStage(f) + ' · 心情 ' + (a.mood || '平静');
+        $('chatFavorText').textContent = '好感度 ' + f + ' · ' + (a.stage || favorStage(f)) + ' · 心情 ' + (a.mood || '平静');
         $('chatFavorBar').style.width = f + '%';
         $('bgImg').src = v.card;
         $('cardImg').src = v.card;
@@ -741,7 +303,7 @@
             + (a.tension_label && a.tension_label !== '正常' ? ' · 对你' + a.tension_label : '');
         $('cardDesc').textContent = a.description || '';
         $('cardQuote').textContent = '“' + (a.quote || v.quote) + '”';
-        $('cardFavorValue').textContent = f + ' / 100 · ' + favorStage(f) + ' · ' + (a.mood || '平静');
+        $('cardFavorValue').textContent = f + ' / 100 · ' + (a.stage || favorStage(f)) + ' · ' + (a.mood || '平静');
         $('cardFavorBar').style.width = f + '%';
         var tags = $('cardTags'); tags.innerHTML = '';
         v.tags.forEach(function (t) {
@@ -755,7 +317,7 @@
         diaryModal.classList.add('open');
         $('diaryTitle').textContent = '与 ' + a.name + ' 的回忆';
         $('diarySub').textContent = '每一天，我们都一起经历过什么';
-        diaryBody.innerHTML = '<div class="diary-sub">加载中…</div>';
+        diaryBody.innerHTML = '<div class="spinner"></div>';
         try {
             var data = await api('/agents/' + a.id + '/diary');
             var diary = data.diary || [];
@@ -808,12 +370,13 @@
         memoryModal.classList.add('open');
         $('memoryTitle').textContent = '她眼中的你';
         $('memorySub').textContent = '在 ' + a.name + ' 心里，你是这样的';
-        memoryBody.innerHTML = '<div class="diary-sub">加载中…</div>';
+        memoryBody.innerHTML = '<div class="spinner"></div>';
         try {
             var data = await api('/agents/' + a.id + '/memory');
             var chips = [];
             if (data.stage) chips.push({ label: '关系', value: data.stage + ' · ' + (data.favorability || 0) + '/100' });
             if (data.mood) chips.push({ label: '她此刻', value: data.mood });
+            if (data.tension_label && data.tension_label !== '正常') chips.push({ label: '她对你的态度', value: data.tension_label });
             var meta = document.createElement('div'); meta.className = 'memory-meta';
             chips.forEach(function (c) {
                 var s = document.createElement('span'); s.className = 'chip';
@@ -904,10 +467,28 @@
         setTimeout(function () { if (t.parentNode) t.parentNode.removeChild(t); }, 3200);
     }
 
+    function copyText(text) {
+        if (!text) return;
+        var done = function () { showToast('已复制到剪贴板', ''); };
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(text).then(done).catch(function () { fallbackCopy(text); });
+        } else {
+            fallbackCopy(text);
+        }
+    }
+    function fallbackCopy(text) {
+        var ta = document.createElement('textarea');
+        ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0';
+        document.body.appendChild(ta); ta.select();
+        try { document.execCommand('copy'); showToast('已复制到剪贴板', ''); } catch (e) {}
+        document.body.removeChild(ta);
+    }
+
     function applyFavorFeedback(data) {
         var a = curAgent(); if (!a) return;
         if (data.favorability !== undefined) a.favorability = data.favorability;
         if (data.mood !== undefined) a.mood = data.mood;
+        if (data.tension_label !== undefined) a.tension_label = data.tension_label;
         renderSwitcher(); renderPanels();
         var txt = '';
         if (data.delta) txt += '好感度 ' + (data.delta > 0 ? '+' : '') + data.delta;
@@ -928,7 +509,7 @@
         var poolOk = state.topicAgent === state.currentId && state.topics.length > TOPIC_PAGE;
         var fresh = Date.now() - state.topicLoadedAt <= TOPIC_TTL;
         if (!force && poolOk && fresh) { nextTopics(); return; }
-        topicRow.innerHTML = '<span class="topic-chip" style="cursor:default;opacity:.6">想话题中…</span>';
+        topicRow.innerHTML = '<div class="spinner" style="margin:4px auto"></div>';
         api('/agents/' + state.currentId + '/topics').then(function (data) {
             var list = data.topics || [];
             // 轻微打乱顺序, 让每次刷新的话题顺序有新鲜感
@@ -947,7 +528,9 @@
         // 全部轮换完或已过期则重新请求, 否则本地轮换一批(即时显示)
         var expired = Date.now() - state.topicLoadedAt > TOPIC_TTL;
         if (expired || state.topics.length <= TOPIC_PAGE) { loadTopics(true); return; }
-        state.topicIdx = (state.topicIdx + TOPIC_PAGE) % state.topics.length;
+        // 按整页步进; 超出末尾则回到开头(避免取模在非整页数时产生重叠批次)
+        var next = state.topicIdx + TOPIC_PAGE;
+        state.topicIdx = next >= state.topics.length ? 0 : next;
         renderTopics();
     }
     function renderTopics() {
@@ -986,6 +569,9 @@
         state.achievements.forEach(function (a) {
             var item = document.createElement('div');
             item.className = 'achievement-item ' + (a.unlocked ? 'unlocked' : 'locked');
+            if (a.unlocked && a.unlocked_at) {
+                item.title = '解锁于 ' + new Date(Number(a.unlocked_at) * 1000).toLocaleString();
+            }
             var e = document.createElement('div'); e.className = 'a-emoji'; e.textContent = a.unlocked ? a.emoji : '🔒';
             var l = document.createElement('div'); l.className = 'a-label'; l.textContent = a.label;
             var d = document.createElement('div'); d.className = 'a-desc'; d.textContent = a.desc;
@@ -1036,10 +622,20 @@
         var time = document.createElement('div'); time.className = 'message-time';
         // 优先显示消息真实时间(后端 ts 为秒级时间戳, 需转毫秒); 无 ts(如本地新消息)时兜底当前时间
         var ts = m.ts ? Number(m.ts) * 1000 : Date.now();
-        time.textContent = (m.delayed ? '延迟回复 · ' : (m.proactive ? '主动发来 · ' : '')) + formatTime(ts);
+        var label = m.delayed ? '延迟回复' : (PROACTIVE_LABELS[m.kind] || (m.proactive ? '主动发来' : ''));
+        time.textContent = (label ? label + ' · ' : '') + formatTime(ts);
         body.appendChild(time);
 
         row.appendChild(avatar); row.appendChild(body);
+        if (m.role === 'assistant') {
+            var copy = document.createElement('button');
+            copy.className = 'copy-btn';
+            copy.title = '复制';
+            copy.setAttribute('aria-label', '复制');
+            copy.innerHTML = '<i class="bi bi-copy"></i>';
+            copy.addEventListener('click', function () { copyText(m.content || ''); });
+            row.appendChild(copy);
+        }
         return row;
     }
 
@@ -1058,6 +654,8 @@
     }
 
     function scrollToBottom() { messagesBox.scrollTop = messagesBox.scrollHeight; }
+    function isNearBottom() { return messagesBox.scrollHeight - messagesBox.scrollTop - messagesBox.clientHeight < 80; }
+    function maybeScrollToBottom() { if (isNearBottom()) scrollToBottom(); }
     function formatTime(ts) {
         var d = new Date(Number(ts));
         return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
@@ -1091,10 +689,11 @@
                 unreadMsgs.forEach(function (m) {
                     if (seen[m.content]) return; // 已在历史里出现过, 去重
                     // 带 ts: 收件箱消息有真实发送时间, 让主动消息也显示真实时间
-                    state.conversations[id].messages.push({ role: 'assistant', content: m.content, proactive: true, ts: m.ts });
+                    state.conversations[id].messages.push({ role: 'assistant', content: m.content, proactive: true, ts: m.ts, kind: m.kind });
                 });
                 await api('/agents/' + id + '/inbox/read', { method: 'POST' });
                 state.unread[id] = 0;
+                renderSwitcher();
             }
         } catch (e) {}
         if (state.currentId === id) renderMessages();
@@ -1105,6 +704,7 @@
     // ---------- 今日行程 ----------
     function loadSchedule(id) {
         api('/agents/' + id + '/schedule').then(function (data) {
+            if (state.currentId !== id) return;  // 竞态防护: 只渲染当前选中角色
             renderSchedule(data.schedule || []);
         }).catch(function () { $('scheduleList').innerHTML = ''; });
     }
@@ -1164,6 +764,15 @@
                 body: JSON.stringify({ agent_id: state.currentId, question: text })
             });
             if (!resp.ok || !resp.body) throw new Error('HTTP ' + resp.status);
+            var ctype = resp.headers.get('content-type') || '';
+            if (ctype.indexOf('text/event-stream') === -1) {
+                // 后端对"空问题/未知角色"等返回普通 JSON 错误(非 SSE), 需单独读取并展示
+                var errData = await resp.json().catch(function () { return {}; });
+                assistantMsg.content = '（' + (errData.error || '出错了') + '）';
+                assistantMsg.typing = false;
+                renderMessages();
+                return;
+            }
             var reader = resp.body.getReader(), decoder = new TextDecoder(), buffer = '';
             while (true) {
                 var chunk = await reader.read();
@@ -1188,14 +797,16 @@
                         if (assistantMsg.typing) { assistantMsg.typing = false; if (bubbleEl) bubbleEl.textContent = ''; }
                         assistantMsg.content += data.data || '';
                         if (bubbleEl) bubbleEl.textContent = assistantMsg.content;
-                        scrollToBottom();
+                        maybeScrollToBottom();
                         continue;
                     }
                     if (data.type === 'sleep') {
                         var sd = data.data || {};
+                        // 后端只把用户消息写入历史、回复入队待醒后补回, 不落占位气泡;
+                        // 这里移除前端乐观插入的占位气泡, 与后端历史保持一致(刷新后不会多/少一条)
+                        var sleepIdx = conv.messages.indexOf(assistantMsg);
+                        if (sleepIdx >= 0) conv.messages.splice(sleepIdx, 1);
                         assistantMsg.typing = false;
-                        assistantMsg.delayed = true;
-                        assistantMsg.content = sd.note || '她睡得很沉，明早会回复你。';
                         renderMessages();
                         showToast((sd.status || '睡觉中') + ' · 她明早会回复你', 'milestone');
                         continue;
@@ -1213,12 +824,16 @@
                     }
                     if (data.type === 'milestone_story') {
                         var ms = data.data || {};
-                        showToast('✨ ' + (ms.content || '关系更进一步了'), 'milestone');
+                        showToast('✨ ' + (ms.name ? ms.name + ' · ' : '') + (ms.content || '关系更进一步了'), 'milestone');
+                        if (ms.content) conv.messages.push({ role: 'assistant', content: ms.content, proactive: true, kind: 'milestone' });
+                        renderMessages();
                         continue;
                     }
                     if (data.type === 'reconcile') {
                         var rc = data.data || {};
-                        showToast('💞 和好了 · ' + (rc.content || ''), 'milestone');
+                        showToast('💞 ' + (rc.name ? rc.name + ' 和你和好了 · ' : '和好了 · ') + (rc.content || ''), 'milestone');
+                        if (rc.content) conv.messages.push({ role: 'assistant', content: rc.content, proactive: true, kind: 'reconcile' });
+                        renderMessages();
                         continue;
                     }
                     if (data.type === 'achievement') {
@@ -1243,7 +858,7 @@
             state.streaming = false;
             if (assistantMsg.typing) { assistantMsg.typing = false; renderMessages(); }
             updateComposer();
-            scrollToBottom();
+            maybeScrollToBottom();
             // 好感度可能已变, 刷新角色信息
             refreshAgents();
             loadAchievements(false);
@@ -1262,6 +877,10 @@
     input.addEventListener('input', updateComposer);
     input.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); send(); } });
     sendBtn.addEventListener('click', send);
+    messagesBox.addEventListener('scroll', function () {
+        scrollBottomBtn.classList.toggle('show', !isNearBottom());
+    });
+    scrollBottomBtn.addEventListener('click', function () { scrollToBottom(); });
     $('resetBtn').addEventListener('click', async function () {
         if (!confirm('确定初始化所有角色吗？\n将清空全部对话记录、记忆和好感度，回到最初状态。')) return;
         try {
@@ -1278,12 +897,22 @@
     $('memoryClose').addEventListener('click', function () { memoryModal.classList.remove('open'); });
     memoryModal.addEventListener('click', function (e) { if (e.target === memoryModal) memoryModal.classList.remove('open'); });
     thoughtToggle.addEventListener('click', function () {
+        // 流式回复期间禁用切换: renderMessages 会重建 DOM, 使流式缓存的节点脱钩导致正文截断
+        if (state.streaming) { showToast('回复进行中，先聊完再切换', ''); return; }
         state.showThought = !state.showThought;
         thoughtToggle.classList.toggle('on', state.showThought);
         renderMessages();
     });
     achieveBtn.addEventListener('click', function () { achieveModal.classList.add('open'); renderAchievements(); });
     $('achieveClose').addEventListener('click', function () { achieveModal.classList.remove('open'); });
+    achieveModal.addEventListener('click', function (e) { if (e.target === achieveModal) achieveModal.classList.remove('open'); });
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+            diaryModal.classList.remove('open');
+            memoryModal.classList.remove('open');
+            achieveModal.classList.remove('open');
+        }
+    });
     achieveModal.addEventListener('click', function (e) { if (e.target === achieveModal) achieveModal.classList.remove('open'); });
 
     // ---------- 昵称 ----------

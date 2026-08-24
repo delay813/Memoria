@@ -4,7 +4,6 @@
 - 特定日期(节日/角色生日)首次对话时, 触发角色特殊问候
 """
 import random
-import threading
 import time
 from datetime import date
 
@@ -40,6 +39,7 @@ class Orchestrator:
                 "description": a.description,
                 "birthday": a.birthday,
                 "favorability": a.get_favor(),
+                "stage": a.get_stage(),
                 "mood": a.get_mood(),
                 "status": st["label"],
                 "activity": st["activity"],
@@ -127,33 +127,29 @@ class Orchestrator:
         return None
 
     def chat_stream(self, agent_id, question):
-        """与指定NPC对话(流式): 注入世界上下文/特殊问候/昵称/跨角色社交上下文 + 成就解锁事件"""
+        """与指定NPC对话(流式): 注入世界上下文/昵称/跨角色社交上下文 + 成就解锁事件"""
         agent = self.get_agent(agent_id)
         if not agent:
             yield {"type": "error", "data": f"未找到角色: {agent_id}"}
             return
         agent.sync_life()
+        agent.ensure_daily_script()
         world_context = self.world.today_context()
-        world_context += "\n" + agent.status_context()
-        event_context = agent.life_events_context()
-        if event_context:
-            world_context += "\n" + event_context
-        special_names = self._today_special_names(agent)
-        # 深夜睡着时先不消费节日/生日问候(等醒了再送), 避免问候被白白用掉
-        is_sleepy = agent.current_status().get("sleepy")
-        greet_hint = None if is_sleepy else self.world.greeting_hint(agent_id, special_names)
+        world_context += "\n" + agent.daily_context()
         social_context = self._social_context(agent_id)
 
         nickname = self.user.get_nickname()
 
-        ev = self._achievement_event("first_chat")
-        if ev:
-            yield ev
+        # "初次相遇"成就: 只有真正产生一轮对话(非深夜沉睡秒回)才解锁
+        if not agent.current_status().get("sleepy"):
+            ev = self._achievement_event("first_chat")
+            if ev:
+                yield ev
 
         milestone_data = None
         reconciled = False
         for event in agent.chat_stream(
-            question, world_context=world_context, greet_hint=greet_hint,
+            question, world_context=world_context,
             social_context=social_context or None, user_nickname=nickname,
         ):
             if event.get("type") == "favor":
@@ -241,6 +237,8 @@ class Orchestrator:
         for a in self.agents.values():
             # 0) 惰性推进世界模拟(作息/随机事件): 回填离开期间的日子
             a.sync_life()
+            # 0.5) 惰性生成今天的命运大纲(剧本): 决定今天做什么 + 要不要主动
+            a.ensure_daily_script()
             # 1) 惰性触发隔夜整理(深睡): 用户上线后检查, 无新互动则免做
             a.maybe_dream()
             # 1.5) 补回深夜积压的消息: 她已醒来且不再睡觉时, 生成延迟回复进收件箱
@@ -249,12 +247,10 @@ class Orchestrator:
                 if content:
                     a.add_proactive("reply", content)
                     print(f"[{a.name}] 补回深夜消息: {content}")
-            # 2) 节日/生日: 当天主动送祝福(每天一次)
+            # 2) 节日/生日: 当天主动送祝福(每天一次); 深夜睡着先不送(等醒), 与聊天侧一致
             names = self._today_special_names(a)
-            if names and a.get_last_proactive().get("festival") != today_iso:
-                # 先占位标记, 再生成: 前端每 30s 轮询 /inbox, 若生成(模型调用)耗时超过
-                # 轮询间隔会重复进入此分支, 导致同一天祝福发送两次
-                a.mark_proactive("festival", today_iso)
+            if names and not a.current_status().get("sleepy") and a.try_claim_festival(today_iso):
+                # try_claim_festival 已原子占位, 防止 30s 轮询并发重复生成同一条祝福
                 content = a.generate_proactive(f"今天是{'、'.join(names)}，想主动送上节日祝福或问候")
                 if content:
                     a.add_proactive("festival", content)
@@ -262,9 +258,8 @@ class Orchestrator:
                     print(f"[{a.name}] 主动消息(节日): {content}")
                 continue
             # 3) 普通主动(想念/想起): 与好感度挂钩 + 随时间衰减 + 冷却
-            if a.should_send_checkin(now):
-                # 先占位标记(写入冷却), 防止并发轮询重复生成同一条"想念"
-                a.mark_proactive("checkin", now)
+            if a.try_claim_checkin(now):
+                # try_claim_checkin 已原子占位(写入冷却), 防止并发轮询重复生成同一条"想念"
                 days = 0
                 if a.get_last_seen():
                     try:
@@ -272,6 +267,9 @@ class Orchestrator:
                     except Exception:
                         days = 0
                 reason = f"已经有{days}天没和对方联系了，心里有点想念"
+                script = a.get_daily_script() or {}
+                if script.get("outline"):
+                    reason += f"；你今天的安排是：{script['outline']}"
                 relay = self._relay_context(a)
                 if relay:
                     reason += f"；另外，{relay}"

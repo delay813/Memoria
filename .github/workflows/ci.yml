@@ -29,6 +29,9 @@ jobs:
       - name: 检查依赖一致性
         run: pip check
 
+      - name: 静态检查(ruff)
+        run: ruff check agent
+
       - name: 语法检查(编译全部模块)
         run: python -m compileall -q agent
 

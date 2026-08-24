@@ -9,6 +9,7 @@
 import json
 import os
 import threading
+from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI, Request
@@ -23,21 +24,13 @@ from orchestrator import get_orchestrator
 # 一、Web服务入口
 # ============================================================
 
-app = FastAPI(
-    title="心忆 · Memoria",
-    description="多角色对话, 每个角色独立人格与记忆, 现实时间世界",
-)
-
-# 挂载静态文件目录(用绝对路径, 不依赖启动时工作目录)
-app.mount("/static", StaticFiles(directory=os.path.join(config.BASE_DIR, "static")), name="static")
-
-# 启动总控: 加载NPC + 初始化现实时间世界时钟
-orch = get_orchestrator()
+# 总控由 lifespan 在服务启动时初始化(避免 import 时产生加载NPC/向量库等重副作用)
+orch = None
 
 
 def _prefetch_topics():
     """后台预生成各角色开场卡(命中缓存), 让首次加载也秒开; 失败不影响服务。"""
-    if not config.TOPIC_PREFETCH:
+    if not config.TOPIC_PREFETCH or orch is None:
         return
     for aid in list(orch.agents.keys()):
         try:
@@ -46,7 +39,23 @@ def _prefetch_topics():
             print(f"[开场卡预热] {aid} 生成失败: {e}")
 
 
-threading.Thread(target=_prefetch_topics, daemon=True).start()
+@asynccontextmanager
+async def lifespan(_app):
+    """启动时初始化总控 + 后台预热开场卡; 关闭时无需清理。"""
+    global orch
+    orch = get_orchestrator()
+    threading.Thread(target=_prefetch_topics, daemon=True).start()
+    yield
+
+
+app = FastAPI(
+    title="心忆 · Memoria",
+    description="多角色对话, 每个角色独立人格与记忆, 现实时间世界",
+    lifespan=lifespan,
+)
+
+# 挂载静态文件目录(用绝对路径, 不依赖启动时工作目录)
+app.mount("/static", StaticFiles(directory=os.path.join(config.BASE_DIR, "static")), name="static")
 
 
 # ============================================================

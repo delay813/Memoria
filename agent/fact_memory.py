@@ -9,6 +9,9 @@ import os
 import re
 import time
 
+import config
+import storage
+
 
 class FactMemory:
     """单个NPC专属的结构化事实库(语义记忆)"""
@@ -33,8 +36,7 @@ class FactMemory:
 
     def _save(self):
         try:
-            with open(self.file_path, "w", encoding="utf-8") as f:
-                json.dump(self._facts, f, ensure_ascii=False, indent=2)
+            storage.save_json(self.file_path, self._facts)
         except Exception as e:
             print(f"[事实库] 保存失败: {e}")
 
@@ -55,21 +57,30 @@ class FactMemory:
     # 更新 / 检索
     # ============================================================
     def replace_all(self, statements):
-        """用大模型抽取出的最新事实列表整体替换(已由大模型完成合并去重与淘汰)。"""
+        """用大模型抽取出的最新事实列表更新事实库(带安全兜底)。
+
+        - 拒绝清空: 已有事实存在但新列表为空时视为模型异常, 保持原样(防误删记忆)。
+        - 规范化: 去空白、截断到 FACT_MAX_CHARS、去除重复。
+        - 保留已存在事实的原始 created_ts, 避免每次整体重写都把"时间"重置。
+        """
         now = time.time()
+        old_by_text = {f.get("statement", ""): f for f in self._facts}
+        seen = set()
         updated = []
         for s in statements:
-            s = str(s or "").strip()
-            if not s:
+            s = str(s or "").strip()[:config.FACT_MAX_CHARS]
+            if not s or s in seen:
                 continue
+            seen.add(s)
+            prev = old_by_text.get(s)
             updated.append({
                 "statement": s,
-                "tags": [],
-                "confidence": 0.8,
-                "created_ts": now,
+                "created_ts": (prev or {}).get("created_ts", now),
                 "updated_ts": now,
             })
-        self._facts = updated
+        if not updated and self._facts:
+            return  # 模型异常返回空, 不覆盖既有事实
+        self._facts = updated[:config.FACT_MAX_COUNT]
         self._save()
 
     def all(self):

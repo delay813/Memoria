@@ -17,6 +17,7 @@ from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_core.documents import Document
 
 import config
+import storage
 
 
 class SimpleBM25:
@@ -94,6 +95,7 @@ class LongTermMemory:
         self.bm25 = None
         # topic -> 父块id集合 的反查索引(话题联想扩展用)
         self._topic_index = {}
+        self._last_registry_save = 0.0
         self._rebuild_bm25()
 
     # ============================================================
@@ -110,8 +112,7 @@ class LongTermMemory:
 
     def _save_registry(self):
         try:
-            with open(self.registry_file, "w", encoding="utf-8") as f:
-                json.dump(self._registry, f, ensure_ascii=False, indent=2)
+            storage.save_json(self.registry_file, self._registry)
         except Exception as e:
             print(f"[长期记忆] 注册表保存失败: {e}")
 
@@ -458,10 +459,15 @@ class LongTermMemory:
             data = self.store.get(include=["documents", "metadatas"])
             texts = data.get("documents") or []
             metas = data.get("metadatas") or []
-            self._docs = [
-                Document(page_content=t, metadata=m or {})
-                for t, m in zip(texts, metas)
-            ]
+            docs = []
+            for t, m in zip(texts, metas):
+                meta = m or {}
+                pid = meta.get("parent_id")
+                # 软遗忘(想不起来)的记忆不进入稀疏索引, 减少检索噪声(与召回层过滤一致)
+                if pid and self._registry.get(pid, {}).get("status") == "forgotten":
+                    continue
+                docs.append(Document(page_content=t, metadata=meta))
+            self._docs = docs
         except Exception as e:
             print(f"[长期记忆] BM25重建失败, 仅用向量检索: {e}")
             self._docs = []
@@ -552,7 +558,10 @@ class LongTermMemory:
                 if pid in self._registry:
                     self._registry[pid]["frequency"] = self._registry[pid].get("frequency", 0) + 1
                     self._registry[pid]["last_access_ts"] = now
-            self._save_registry()
+            # 访问计数节流落盘: 不必每轮对话都写一次注册表(避免频繁磁盘写)
+            if now - self._last_registry_save >= config.MEMORY_ACCESS_SAVE_INTERVAL:
+                self._save_registry()
+                self._last_registry_save = now
 
             # 附上时间标签, 让角色能自然说出"你上次……/那天……"
             return [self._format_memory(text, age) for _, _, text, age in top]
@@ -730,3 +739,52 @@ class LongTermMemory:
             self._rebuild_bm25()
             print(f"[长期记忆] {agent_name} 遗忘了 {forgotten} 条低价值记忆")
         return forgotten
+
+    def suppress_conflicts(self, statements, top_k=3):
+        """跨记忆一致性: 把"已被纠正/过时"的旧事实对应的情景记忆做软遗忘。
+
+        facts.json 是权威的"当前结论"; 当一条事实被更新/淘汰时, 语义检索出与其相关的旧情景记忆,
+        并标记为 forgotten(不再注入召回), 让事实库优先于向量库, 避免角色"旧事重提"自相矛盾。
+        仅对语义相似度超过阈值的记忆软遗忘(不物理删除), 降低误伤。返回软遗忘的记忆条数。
+        """
+        cleaned = [str(s or "").strip() for s in (statements or []) if str(s or "").strip()]
+        if not cleaned:
+            return 0
+        try:
+            stmt_embeds = self.embedding.embed_documents(cleaned)
+        except Exception as e:
+            print(f"[长期记忆] 冲突语句嵌入失败: {e}")
+            return 0
+
+        suppressed = set()
+        for stmt, emb in zip(cleaned, stmt_embeds):
+            try:
+                hits = self.store.similarity_search_by_vector(emb, k=top_k)
+            except Exception as e:
+                print(f"[长期记忆] 冲突检索失败: {e}")
+                continue
+            if not hits:
+                continue
+            try:
+                hit_embeds = self.embedding.embed_documents([h.page_content for h in hits])
+            except Exception as e:
+                print(f"[长期记忆] 冲突候选嵌入失败: {e}")
+                continue
+            for doc, he in zip(hits, hit_embeds):
+                if self._cosine(emb, he) < config.MEMORY_FACT_CONFLICT_THRESHOLD:
+                    continue
+                pid = doc.metadata.get("parent_id")
+                if not pid or pid not in self._registry:
+                    continue
+                entry = self._registry[pid]
+                if entry.get("status") == "forgotten":
+                    continue
+                entry["status"] = "forgotten"
+                entry["importance"] = max(1, min(10, (entry.get("importance", 5) or 5) - 3))
+                suppressed.add(pid)
+
+        if suppressed:
+            self._save_registry()
+            self._rebuild_bm25()
+            print(f"[长期记忆] 因事实更新软遗忘了 {len(suppressed)} 条相关旧记忆")
+        return len(suppressed)

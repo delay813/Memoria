@@ -16,6 +16,7 @@ from datetime import date
 from dashscope import Generation
 
 import config
+import storage
 from fact_memory import FactMemory
 from longterm_memory import LongTermMemory
 from narrator import WorldClock
@@ -179,6 +180,7 @@ class Agent:
         self._compacting = False
         self._distilling = False
         self._dreaming = False
+        self._scripting = False
 
         # 人格内核缓存(按文件mtime失效)
         self._persona_mtime = -1
@@ -215,8 +217,7 @@ class Agent:
 
     def _save_history(self):
         try:
-            with open(self.history_file, "w", encoding="utf-8") as f:
-                json.dump(self.history, f, ensure_ascii=False, indent=2)
+            storage.save_json(self.history_file, self.history)
         except Exception as e:
             print(f"[{self.name}] 历史保存失败: {e}")
 
@@ -225,11 +226,12 @@ class Agent:
 
         附带 ts(秒级时间戳)供前端显示真实发送时间; 过滤掉流式中断产生的残片(interrupted)。
         """
-        return [
-            {"role": m["role"], "content": m["content"], "ts": m.get("ts")}
-            for m in self.history[1:]
-            if m.get("role") in ("user", "assistant") and not m.get("interrupted")
-        ]
+        with self._lock:
+            return [
+                {"role": m["role"], "content": m["content"], "ts": m.get("ts")}
+                for m in self.history[1:]
+                if m.get("role") in ("user", "assistant") and not m.get("interrupted")
+            ]
 
     def reset(self):
         """初始化该角色: 清空对话历史/结晶记忆/好感度/心情/长期记忆/事实库/收件箱/日记(保留人格内核与锚点)"""
@@ -245,6 +247,8 @@ class Agent:
             self._compacting = False
             self._distilling = False
             self._dreaming = False
+            self._scripting = False
+            self._topics_cache = None
             for f in (self.history_file, self.memory_file, self.state_file,
                       self.inbox_file, self.fact_file, self.daily_log_file, self.life_file):
                 try:
@@ -270,16 +274,17 @@ class Agent:
 
     def _save_inbox(self, inbox):
         try:
-            with open(self.inbox_file, "w", encoding="utf-8") as f:
-                json.dump(inbox, f, ensure_ascii=False, indent=2)
+            storage.save_json(self.inbox_file, inbox)
         except Exception as e:
             print(f"[{self.name}] 收件箱保存失败: {e}")
 
     def get_inbox(self):
-        return self._load_inbox()
+        with self._lock:
+            return self._load_inbox()
 
     def unread_count(self):
-        return len([m for m in self._load_inbox() if not m.get("read")])
+        with self._lock:
+            return len([m for m in self._load_inbox() if not m.get("read")])
 
     def mark_read(self):
         with self._lock:
@@ -303,13 +308,8 @@ class Agent:
             self.history.append({"role": "assistant", "content": content, "ts": time.time()})
             self._save_history()
 
-    def mark_proactive(self, kind, value):
-        """记录某类主动消息(节日/生日/想念)最近一次触发的时间或日期标识"""
-        self._last_proactive[kind] = value
-        self._save_state()
-
-    def should_send_checkin(self, now):
-        """判断是否该发一条普通主动消息: 意愿 = 好感度 - 时间衰减, 且受冷却限制"""
+    def _should_send_checkin_locked(self, now):
+        """判断是否该发一条普通主动消息(调用方须已持有 self._lock)。"""
         # 冷战期间不主动找对方
         if self._tension >= config.TENSION_COLD:
             return False
@@ -322,15 +322,38 @@ class Agent:
         # 离开不足N天(今天刚互动过)不发
         if days < config.PROACTIVE_MIN_AWAY_DAYS:
             return False
-        # 离开越久, 主动意愿越低(欲望随时间衰减)
-        intent = self._favor - days * config.PROACTIVE_DECAY_PER_DAY
-        if intent < config.PROACTIVE_INTENT_THRESHOLD:
-            return False
         # 冷却: 两次普通主动消息的最小间隔
         last = self._last_proactive.get("checkin", 0) or 0
         if now - last < config.PROACTIVE_COOLDOWN_DAYS * 86400:
             return False
-        return True
+        # 命运大纲(剧本)决定今天要不要主动; 有当天大纲时以其为准, 无大纲退回数值判断
+        script = self.life.get_script() or {}
+        if script.get("date") == date.today().isoformat():
+            if script.get("reach_out") is False:
+                return False
+            if script.get("reach_out") is True:
+                return True
+        # 离开越久, 主动意愿越低(欲望随时间衰减)
+        intent = self._favor - days * config.PROACTIVE_DECAY_PER_DAY
+        return intent >= config.PROACTIVE_INTENT_THRESHOLD
+
+    def try_claim_checkin(self, now):
+        """原子判断+占位普通主动消息(想念): 满足意愿且冷却已过才返回 True, 防并发轮询重复生成。"""
+        with self._lock:
+            if not self._should_send_checkin_locked(now):
+                return False
+            self._last_proactive["checkin"] = now
+            self._save_state()
+            return True
+
+    def try_claim_festival(self, today_iso):
+        """原子判断+占位节日/生日问候: 当天尚未发过才返回 True, 防并发轮询重复发送。"""
+        with self._lock:
+            if self._last_proactive.get("festival") == today_iso:
+                return False
+            self._last_proactive["festival"] = today_iso
+            self._save_state()
+            return True
 
     def generate_proactive(self, reason):
         """生成一条符合人设与当前关系的主动消息(简短), 失败返回空串"""
@@ -377,8 +400,7 @@ class Agent:
         if last_compact_turns is not None:
             memory["last_compact_turns"] = last_compact_turns
         try:
-            with open(self.memory_file, "w", encoding="utf-8") as f:
-                json.dump(memory, f, ensure_ascii=False, indent=2)
+            storage.save_json(self.memory_file, memory)
         except Exception as e:
             print(f"[{self.name}] 记忆保存失败: {e}")
 
@@ -563,21 +585,26 @@ class Agent:
 
     def _save_state(self):
         try:
-            with open(self.state_file, "w", encoding="utf-8") as f:
-                json.dump({
-                    "favorability": self._favor,
-                    "mood": self._mood,
-                    "last_seen": self._last_seen,
-                    "last_proactive": self._last_proactive,
-                    "last_dream_ts": self._last_dream_ts,
-                    "pending_replies": self._pending_replies,
-                    "tension": self._tension,
-                }, f, ensure_ascii=False, indent=2)
+            storage.save_json(self.state_file, {
+                "favorability": self._favor,
+                "mood": self._mood,
+                "last_seen": self._last_seen,
+                "last_proactive": self._last_proactive,
+                "last_dream_ts": self._last_dream_ts,
+                "pending_replies": self._pending_replies,
+                "tension": self._tension,
+            })
         except Exception as e:
             print(f"[{self.name}] 状态保存失败: {e}")
 
     def get_favor(self):
-        return self._favor
+        with self._lock:
+            return self._favor
+
+    def get_stage(self):
+        """当前关系阶段(陌生/熟悉/亲近/亲密), 供前端直接展示(避免前端重复阈值)。"""
+        with self._lock:
+            return self._favor_stage()
 
     def _favor_stage(self):
         if self._favor < config.FAVOR_STAGE_COLD:
@@ -630,7 +657,9 @@ class Agent:
         self._save_state()
         new_stage = self._favor_stage()
         milestone = None
-        if new_stage != old_stage and delta > 0:
+        # 仅 45(熟悉→亲近)/70(亲近→亲密) 两个关键阶段跨越才触发关系里程碑剧情(与成就/文档口径一致)
+        if delta > 0 and ((new_stage == "亲近" and old_stage == "熟悉")
+                          or (new_stage == "亲密" and old_stage == "亲近")):
             milestone = {"from": old_stage, "to": new_stage, "favorability": self._favor}
         return {"delta": delta, "reason": reason, "favorability": self._favor,
                 "stage": new_stage, "mood": self._mood_label(), "milestone": milestone,
@@ -682,7 +711,8 @@ class Agent:
     # 心情系统
     # ============================================================
     def get_mood(self):
-        return self._mood_label()
+        with self._lock:
+            return self._mood_label()
 
     def get_memory_profile(self):
         """返回"她眼中的你": 关系状态 + 关于用户的事实库 + 她对用户的印象画像(供前端记忆卡展示)"""
@@ -699,11 +729,8 @@ class Agent:
 
     def get_last_seen(self):
         """最近一次互动的日期(YYYY-MM-DD), 从未互动则为空串"""
-        return self._last_seen
-
-    def get_last_proactive(self):
-        """各类型主动消息最近触发记录(供总控判断节日/生日问候是否已发)"""
-        return dict(self._last_proactive)
+        with self._lock:
+            return self._last_seen
 
     def _mood_label(self):
         v = self._mood
@@ -774,23 +801,25 @@ class Agent:
 
     def tension_label(self):
         """当前关系张力标签(正常/有点介意/冷战/很生气), 供前端展示。"""
-        return self._tension_label()
+        with self._lock:
+            return self._tension_label()
 
     def dynamic_quote(self):
         """角色卡语录(随心情/关系阶段/状态动态化)。"""
-        q = config.NPC_QUOTES.get(self.agent_id) or {}
-        if self.current_status().get("sleepy") and q.get("sleepy"):
-            return q["sleepy"]
-        if self._tension >= config.TENSION_COLD and q.get("cold"):
-            return q["cold"]
-        mood = self._mood_label()
-        mood_q = (q.get("mood") or {}).get(mood)
-        if mood != "平静" and mood_q:
-            return mood_q
-        stage_q = (q.get("stage") or {}).get(self._favor_stage())
-        if stage_q:
-            return stage_q
-        return (q.get("mood") or {}).get("平静", "")
+        with self._lock:
+            q = config.NPC_QUOTES.get(self.agent_id) or {}
+            if self.current_status().get("sleepy") and q.get("sleepy"):
+                return q["sleepy"]
+            if self._tension >= config.TENSION_COLD and q.get("cold"):
+                return q["cold"]
+            mood = self._mood_label()
+            mood_q = (q.get("mood") or {}).get(mood)
+            if mood != "平静" and mood_q:
+                return mood_q
+            stage_q = (q.get("stage") or {}).get(self._favor_stage())
+            if stage_q:
+                return stage_q
+            return (q.get("mood") or {}).get("平静", "")
 
     def _tension_context(self):
         """把当前关系张力写成提示词片段, 冷战/介意时让角色语气相应变冷。"""
@@ -867,6 +896,98 @@ class Agent:
             if parts:
                 return f"【你最近经历的事】{parts}。如果话题相关，可以自然提起。"
         return ""
+
+    # ============================================================
+    # 命运大纲(每日剧本): 旁白每天为角色写一条极简"今天做什么 + 要不要主动"
+    # ============================================================
+    def _generate_daily_script(self, today_iso):
+        """生成今天的极简命运大纲。返回 {date, outline, reach_out, reason} 或 {}。"""
+        persona = self._current_persona()
+        facts = self.fact_memory.all()
+        facts_text = "、".join(facts) if facts else "暂无"
+        profile = self._load_memory().get("user_profile", "") or "暂无"
+        sched = format_schedule(self.agent_id)
+        sched_text = "；".join(f"{s['time']} {s['label']}" for s in sched)
+        ev = self.life.today_event(today_iso)
+        ev_text = ev.get("text", "") if ev else "无特别事件"
+
+        prompt = f"""你是「{self.name}」的旁白编剧。请为「{self.name}」写今天({today_iso})的极简命运大纲。
+
+【她的核心人格】
+{persona}
+
+【她今天的时间安排】{sched_text}
+【今天发生在她身上的事】{ev_text}
+【当前与用户的关系】好感度 {self._favor}/100，关系阶段{self._favor_stage()}；此刻心情 {self._mood_label()}
+【她对用户的了解】{facts_text}
+【她对用户的印象】{profile}
+
+请只做两件事:
+1. 用 1 句话写她"今天的心境/特别打算"的极简大纲(例如"课程较满，有点累，想早点休息"或"今天格外想你")。不要复述固定的作息表(上课/社团/睡觉等系统已掌握), 只写今天有别于平常、或最能代表她今日心境的那一点; 必须符合人设与事实, 绝不能写出与身份、性格矛盾的事。
+2. 判断她今天"要不要主动找用户聊天"(reach_out): 综合好感度高低、关系阶段、今天忙不忙、以及她对用户的了解与想念程度。给一句极简理由(可空)。
+
+严格输出JSON(不要任何其他文字):
+{{"outline":"...","reach_out":true,"reason":"..."}}
+"""
+        resp = _call_generation([{"role": "user", "content": prompt}], model=config.MEMORY_EXTRACT_MODEL)
+        if not resp:
+            return {}
+        info = _parse_json(resp.output.choices[0].message.content)
+        if not isinstance(info, dict):
+            return {}
+        outline = str(info.get("outline", "")).strip()
+        if not outline:
+            return {}
+        raw = info.get("reach_out")
+        if isinstance(raw, str):
+            reach_out = raw.strip().lower() in ("true", "1", "yes", "是", "想", "要")
+        else:
+            reach_out = bool(raw)
+        reason = str(info.get("reason", "")).strip()
+        return {"date": today_iso, "outline": outline, "reach_out": reach_out, "reason": reason}
+
+    def ensure_daily_script(self):
+        """惰性生成今天的命运大纲(每天一次, 幂等)。网络调用在锁外进行。"""
+        today = date.today().isoformat()
+        script = self.life.get_script() or {}
+        if script.get("date") == today:
+            return script
+        if self._scripting:
+            return script or {}
+        self._scripting = True
+        try:
+            script = self._generate_daily_script(today)
+            if script:
+                self.life.set_script(script)
+            return script or {}
+        finally:
+            self._scripting = False
+
+    def get_daily_script(self):
+        """返回当天的命运大纲 dict(可能为空)。"""
+        return dict(self.life.get_script() or {})
+
+    def script_context(self):
+        """把当天的命运大纲写成提示词片段, 注入对话, 让角色"遵从大纲"行动。"""
+        script = self.life.get_script() or {}
+        today = date.today().isoformat()
+        if script.get("date") == today and script.get("outline"):
+            return (
+                f"【你今天的命运大纲】{script['outline']}。"
+                "这是你今天的行动与心境的依据，请自然地带入对话，但不要逐字复述大纲。"
+            )
+        return ""
+
+    def daily_context(self):
+        """汇总"今日"上下文(当前状态 + 命运大纲 + 当天/最近事件), 一次性注入对话。"""
+        parts = [self.status_context()]
+        script = self.script_context()
+        if script:
+            parts.append(script)
+        events = self.life_events_context()
+        if events:
+            parts.append(events)
+        return "\n".join(parts)
 
     def sync_life(self):
         """惰性推进世界: 回填离开期间的日子、掷随机事件, 并把事件带来的心情变化应用到自身。"""
@@ -1064,8 +1185,7 @@ class Agent:
     # 系统提示词构造: 人格内核 + 行为准则 + 关系 + 心情 + 今日世界 + 画像 + 事实 + 独白 + 召回记忆
     # ============================================================
     def _build_system_message(self, recalled, facts=None, world_context=None,
-                              greet_hint=None, cognition=None,
-                              social_context=None, user_nickname=None):
+                              cognition=None, social_context=None, user_nickname=None):
         cognition = cognition or {}
         memory = self._load_memory()
         parts = [
@@ -1083,12 +1203,11 @@ class Agent:
             parts.append(social_context)
         if world_context:
             parts.append(world_context)
-        if greet_hint:
-            parts.append(greet_hint)
         if memory.get("user_profile"):
             parts.append(f"【你对用户的印象(画像)】\n{memory['user_profile']}")
         if facts:
             parts.append("【你对用户的长期了解(事实)】\n" + "\n".join(f"- {f}" for f in facts))
+            parts.append("【记忆冲突处理】当上面的长期事实与【相关久远记忆】冲突时，以长期事实为准（事实是已更新的权威结论，久远记忆可能是过时的旧证据）。")
         if cognition.get("user_emotion") or cognition.get("user_intent"):
             judge = f"情绪={cognition.get('user_emotion', '')}，意图={cognition.get('user_intent', '')}"
             if cognition.get("topic"):
@@ -1143,6 +1262,7 @@ class Agent:
 3. persona_growth(人格成长): 这段对话让「{self.name}」产生的新认知或成长(新的世界观、对用户的新了解、观念变化等), 一句话以内, 没有则写""
 4. facts(关于用户的稳定事实): 抽取/合并关于用户的稳定事实(身份、性格、偏好、约定、重要事件等), 每条{config.FACT_MAX_CHARS}字以内, 去掉已过时或已被纠正的信息, 与旧事实合并去重, 最多{config.FACT_MAX_COUNT}条, 没有则给空数组[]
 5. tags(话题标签): 从这段对话提取 3~5 个话题关键词/标签(用于记忆检索与联想, 如 "面试" "换工作" "焦虑"), 没有则给空数组[]
+6. removed_facts(被删除的旧事实): 列出你从"已有事实"里删除的那些"已过时或被明确纠正"的旧事实原文(仅当旧事实确实已过时/被纠正时才列; 措辞微调、合并改写而仍有效的信息不要列), 没有则给空数组[]
 
 要求: 保留旧记忆中仍然有效的信息; 不要遗漏旧记忆中的重要内容
 
@@ -1159,7 +1279,7 @@ class Agent:
 {history_text}
 
 输出格式:
-{{"user_profile":"...","conversation_summary":"...","persona_growth":"...","facts":["...","..."],"tags":["...","..."]}}
+{{"user_profile":"...","conversation_summary":"...","persona_growth":"...","facts":["...","..."],"removed_facts":["..."],"tags":["...","..."]}}
 """
         resp = _call_generation([{"role": "user", "content": prompt}], model=config.MEMORY_EXTRACT_MODEL)
         if not resp:
@@ -1174,11 +1294,15 @@ class Agent:
         tags = info.get("tags", []) or []
         if not isinstance(tags, list):
             tags = [tags]
+        removed_facts = info.get("removed_facts", []) or []
+        if not isinstance(removed_facts, list):
+            removed_facts = [removed_facts]
         return {
             "user_profile": (info.get("user_profile") or "").strip(),
             "conversation_summary": (info.get("conversation_summary") or "").strip(),
             "persona_growth": (info.get("persona_growth") or "").strip(),
             "facts": [str(x).strip() for x in facts if str(x).strip()],
+            "removed_facts": [str(x).strip() for x in removed_facts if str(x).strip()],
             "tags": [str(x).strip() for x in tags if str(x).strip()],
         }
 
@@ -1231,6 +1355,14 @@ class Agent:
                 self.long_term.forget(self.name)
             except Exception as e:
                 print(f"[{self.name}] 遗忘机制异常: {e}")
+            # 4.5) 跨记忆一致性(锁外执行): 被纠正/过时的旧事实 → 软遗忘相关情景记忆,
+            #      让事实库(权威结论)优先于向量库(旧证据), 避免角色"旧事重提"自相矛盾
+            removed = mem.get("removed_facts", []) or []
+            if removed:
+                try:
+                    self.long_term.suppress_conflicts(removed)
+                except Exception as e:
+                    print(f"[{self.name}] 事实冲突软遗忘异常: {e}")
         except Exception as e:
             print(f"[{self.name}] 异步压缩失败: {e}")
         finally:
@@ -1292,8 +1424,7 @@ class Agent:
 
     def _save_daily_log(self, logs):
         try:
-            with open(self.daily_log_file, "w", encoding="utf-8") as f:
-                json.dump(logs, f, ensure_ascii=False, indent=2)
+            storage.save_json(self.daily_log_file, logs)
         except Exception as e:
             print(f"[{self.name}] 日历史保存失败: {e}")
 
@@ -1432,8 +1563,7 @@ class Agent:
     # ============================================================
     # 对话(流式)
     # ============================================================
-    def chat_stream(self, prompt, world_context=None, greet_hint=None,
-                    social_context=None, user_nickname=None):
+    def chat_stream(self, prompt, world_context=None, social_context=None, user_nickname=None):
         self._lock.acquire()
         try:
             # 0) 惰性触发深睡(隔夜整理): 满足条件才后台执行
@@ -1497,7 +1627,7 @@ class Agent:
             messages = [{
                 "role": "system",
                 "content": self._build_system_message(
-                    recalled, facts, world_context, greet_hint, cognition,
+                    recalled, facts, world_context, cognition,
                     social_context=social_context, user_nickname=user_nickname,
                 ),
             }]

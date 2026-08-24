@@ -5,6 +5,25 @@ import json
 import logging
 import os
 import re
+import sys
+
+
+def _fix_console_encoding():
+    """修复 Windows 控制台打印中文/emoji 时的编码错误(UnicodeEncodeError)。
+
+    控制台默认代码页常为 GBK(cp936), 而模型输出可能含 emoji、生僻字等 GBK 无法编码的字符,
+    print 时就会抛 "UnicodeEncodeError: 'gbk' codec can't encode ..."。
+    这里把 stdout/stderr 重配为 UTF-8 输出, 并对仍无法编码的字符降级为 '?'(而非抛错),
+    从根源上消除命令行"文字解码错误"。任何入口(run.py / 启动服务.bat / uvicorn)都会先导入本模块。
+    """
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
+_fix_console_encoding()
 
 
 def _setup_logging():
@@ -112,6 +131,8 @@ MEMORY_RECALL_THRESHOLD = 0.1  # 相关性阈值: rerank分数低于此值的记
 MEMORY_SMALL_CHUNK_SIZE = 150  # 小块切分粒度(字符), 超过则按句子切分
 MEMORY_HYBRID_TOPN = 12        # 混合检索中, 向量/BM25 每路返回的小块数
 MEMORY_RERANK_TOPN = 9         # 送入重排模型的父块候选数
+MEMORY_ACCESS_SAVE_INTERVAL = 60  # 召回访问计数落盘节流(秒): 避免每轮对话都写一次注册表文件
+MEMORY_FACT_CONFLICT_THRESHOLD = 0.72  # 事实更新时, 语义相似度≥此值的旧情景记忆判"冲突"并软遗忘
 
 # ============================================================
 # 记忆加权召回(四维: 时近性/重要性/访问频率/语义相似度)

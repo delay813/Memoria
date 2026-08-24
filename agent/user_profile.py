@@ -7,6 +7,8 @@ import os
 import threading
 import time
 
+import storage
+
 
 # 成就定义(按展示顺序)
 ACHIEVEMENTS = [
@@ -42,12 +44,7 @@ class UserProfile:
 
     def _save(self):
         try:
-            os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
-            # 原子写: 先写临时文件再 rename, 防止并发写导致 JSON 截断/损坏
-            tmp = self.file_path + ".tmp"
-            with open(tmp, "w", encoding="utf-8") as f:
-                json.dump(self._data, f, ensure_ascii=False, indent=2)
-            os.replace(tmp, self.file_path)
+            storage.save_json(self.file_path, self._data)
         except Exception as e:
             print(f"[用户档案] 保存失败: {e}")
 
@@ -61,9 +58,6 @@ class UserProfile:
             ach[key] = time.time()
             self._save()
             return True
-
-    def unlocked(self, key):
-        return bool(self._data.get("achievements", {}).get(key))
 
     def all_achievements(self):
         """返回全部成就及解锁状态(供前端成就墙展示)"""

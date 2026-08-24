@@ -11,6 +11,7 @@ import time
 from datetime import date, datetime
 
 import config
+import storage
 
 
 class WorldClock:
@@ -25,7 +26,6 @@ class WorldClock:
         self.start_date = None   # 世界起始日期 "YYYY-MM-DD"
         self.last_date = None    # 上次同步到的日期
         self.days_elapsed = 0    # 从世界起始起经过的天数
-        self.greeted = {}        # {agent_id: "YYYY-MM-DD"} 每个角色最近一次节日问候的日期
         self.events = []         # 事件时间轴
         self._event_id = 0
 
@@ -52,7 +52,6 @@ class WorldClock:
                 self.start_date = state.get("start_date")
                 self.last_date = state.get("last_date")
                 self.days_elapsed = state.get("days_elapsed", 0)
-                self.greeted = state.get("greeted", {})
                 self.events = state.get("events", [])[-50:]
                 self._event_id = max((e.get("id", 0) for e in self.events), default=0)
         except Exception as e:
@@ -60,14 +59,12 @@ class WorldClock:
 
     def _save(self):
         try:
-            with open(self.state_file, "w", encoding="utf-8") as f:
-                json.dump({
-                    "start_date": self.start_date,
-                    "last_date": self.last_date,
-                    "days_elapsed": self.days_elapsed,
-                    "greeted": self.greeted,
-                    "events": self.events[-50:],
-                }, f, ensure_ascii=False, indent=2)
+            storage.save_json(self.state_file, {
+                "start_date": self.start_date,
+                "last_date": self.last_date,
+                "days_elapsed": self.days_elapsed,
+                "events": self.events[-50:],
+            })
         except Exception as e:
             print(f"[旁白] 世界状态保存失败: {e}")
 
@@ -127,10 +124,15 @@ class WorldClock:
                 self._save()
                 return
             if today != self.last_date:
-                delta = (date.fromisoformat(today) - date.fromisoformat(self.last_date)).days
-                self.days_elapsed += delta
+                try:
+                    delta = (date.fromisoformat(today) - date.fromisoformat(self.last_date)).days
+                except Exception:
+                    delta = 0
+                # 仅向前推进时累计天数; 系统时钟回拨则只校准日期, 不产生负天数
+                if delta > 0:
+                    self.days_elapsed += delta
+                    self._add_event("new_day", f"【旁白】时间来到 {today}（{self.weekday_cn()}）。")
                 self.last_date = today
-                self._add_event("new_day", f"【旁白】时间来到 {today}（{self.weekday_cn()}）。")
                 self._save()
 
     # ============================================================
@@ -175,22 +177,6 @@ class WorldClock:
         return "【今日世界】\n" + "\n".join(lines)
 
     # ============================================================
-    # 每日特殊问候
-    # ============================================================
-    def greeting_hint(self, agent_id, special_names):
-        """今天有特殊日期且该角色今天尚未问候过时, 返回问候提示文本并记录; 否则返回 None"""
-        with self.lock:
-            if not special_names:
-                return None
-            today = self.today_iso()
-            if self.greeted.get(agent_id) == today:
-                return None
-            self.greeted[agent_id] = today
-            self._save()
-            return (f"【今日特别】今天是{'、'.join(special_names)}，"
-                    f"请结合你的性格，自然地先送上节日祝福或问候，再回应对方。")
-
-    # ============================================================
     # 世界快照(供前端轮询)
     # ============================================================
     def snapshot(self):
@@ -210,12 +196,11 @@ class WorldClock:
             }
 
     def reset(self):
-        """重置世界状态到初始(清空事件/问候/天数), 并重新记录起始日"""
+        """重置世界状态到初始(清空事件/天数), 并重新记录起始日"""
         with self.lock:
             self.start_date = None
             self.last_date = None
             self.days_elapsed = 0
-            self.greeted = {}
             self.events = []
             self._event_id = 0
             try:

@@ -12,6 +12,7 @@ import time
 from datetime import date, datetime, timedelta
 
 import config
+import storage
 
 
 def _in_slot(hour, start, end):
@@ -74,6 +75,7 @@ class LifeSim:
         self.last_sim_date = None       # "YYYY-MM-DD", 上次模拟到哪天
         self.daily_events = []          # 事件列表(按时间正序追加, 读取时倒序取最近)
         self._pending_followups = []    # 已排期、尚未触发的后续事件链
+        self.daily_script = {}          # 当日"命运大纲" {date, outline, reach_out, reason}
         self._load()
 
     # ============================================================
@@ -92,18 +94,20 @@ class LifeSim:
                     pending = data.get("pending_followups", [])
                     if isinstance(pending, list):
                         self._pending_followups = pending
+                    script = data.get("daily_script", {})
+                    if isinstance(script, dict):
+                        self.daily_script = script
         except Exception as e:
             print(f"[世界模拟] {self.agent_id} 生活状态加载失败: {e}")
 
     def _save(self):
         try:
-            os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
-            with open(self.file_path, "w", encoding="utf-8") as f:
-                json.dump({
-                    "last_sim_date": self.last_sim_date,
-                    "daily_events": self.daily_events,
-                    "pending_followups": self._pending_followups,
-                }, f, ensure_ascii=False, indent=2)
+            storage.save_json(self.file_path, {
+                "last_sim_date": self.last_sim_date,
+                "daily_events": self.daily_events,
+                "pending_followups": self._pending_followups,
+                "daily_script": self.daily_script,
+            })
         except Exception as e:
             print(f"[世界模拟] {self.agent_id} 生活状态保存失败: {e}")
 
@@ -203,11 +207,24 @@ class LifeSim:
         """最近 k 条事件(按时间倒序)。"""
         return list(reversed(self.daily_events[-k:]))
 
+    # ============================================================
+    # 命运大纲(每日剧本): 由旁白/模型生成, 这里只负责存取
+    # ============================================================
+    def get_script(self):
+        """返回当前保存的命运大纲 dict(可能为 None)。"""
+        return dict(self.daily_script) if self.daily_script else None
+
+    def set_script(self, script):
+        """保存命运大纲(覆盖)。"""
+        self.daily_script = dict(script or {})
+        self._save()
+
     def reset(self):
         """清空生活状态并删除持久化文件。"""
         self.last_sim_date = None
         self.daily_events = []
         self._pending_followups = []
+        self.daily_script = {}
         try:
             if os.path.exists(self.file_path):
                 os.remove(self.file_path)

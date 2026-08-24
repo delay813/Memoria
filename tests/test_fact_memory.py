@@ -2,6 +2,11 @@
 
 运行: pytest -q   (需先在项目根目录执行 pip install -r requirements-dev.txt)
 """
+import os
+
+# 在 import 前注入占位 Key, 避免 config.py 因缺 Key 而抛错(fact_memory 现依赖 config 的上限常量)
+os.environ.setdefault("DASHSCOPE_API_KEY", "test-key-for-ci")
+
 from fact_memory import FactMemory
 
 
