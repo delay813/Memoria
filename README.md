@@ -252,7 +252,7 @@ pytest -q
 | `GET` | `/agents/{id}/inbox` | 指定角色的主动消息收件箱 |
 | `POST` | `/agents/{id}/inbox/read` | 标记已读 |
 | `GET` | `/world` | 世界状态（日期/星期/节日/事件 + 各角色作息状态与近期事件） |
-| `POST` | `/reset` | 初始化所有角色（清空记忆与好感度，保留人格内核） |
+| `POST` | `/reset` | 初始化所有角色（清空记忆与好感度，保留人格内核），破坏性操作需带 `?confirm=yes` |
 
 ---
 

@@ -925,6 +925,11 @@ class Agent:
             return ""
         with self._lock:
             # 成功后才清掉本次已消费的消息(保留生成期间新到的消息)
+            # 并发保护: 若生成期间 pending 已被其他线程消费(长度不一致且头部内容对不上),
+            # 说明已有人补过这条延迟回复, 放弃本次结果, 避免重复消息
+            if (len(self._pending_replies) != len(pending)
+                    and self._pending_replies[:len(pending)] != pending):
+                return ""
             self._pending_replies = self._pending_replies[len(pending):]
             self._save_state()
         return content

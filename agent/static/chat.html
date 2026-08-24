@@ -1090,7 +1090,8 @@
                 });
                 unreadMsgs.forEach(function (m) {
                     if (seen[m.content]) return; // 已在历史里出现过, 去重
-                    state.conversations[id].messages.push({ role: 'assistant', content: m.content, proactive: true });
+                    // 带 ts: 收件箱消息有真实发送时间, 让主动消息也显示真实时间
+                    state.conversations[id].messages.push({ role: 'assistant', content: m.content, proactive: true, ts: m.ts });
                 });
                 await api('/agents/' + id + '/inbox/read', { method: 'POST' });
                 state.unread[id] = 0;
