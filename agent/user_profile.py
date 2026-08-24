@@ -4,6 +4,7 @@
 """
 import json
 import os
+import threading
 import time
 
 
@@ -24,6 +25,8 @@ class UserProfile:
 
     def __init__(self, file_path):
         self.file_path = file_path
+        # 成就解锁可能从后台线程回调(_run_compact/_run_dream/sync_life 等), 防并发写坏文件
+        self._lock = threading.Lock()
         self._data = self._load()
 
     def _load(self):
@@ -40,20 +43,24 @@ class UserProfile:
     def _save(self):
         try:
             os.makedirs(os.path.dirname(self.file_path), exist_ok=True)
-            with open(self.file_path, "w", encoding="utf-8") as f:
+            # 原子写: 先写临时文件再 rename, 防止并发写导致 JSON 截断/损坏
+            tmp = self.file_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(self._data, f, ensure_ascii=False, indent=2)
+            os.replace(tmp, self.file_path)
         except Exception as e:
             print(f"[用户档案] 保存失败: {e}")
 
     # ---------- 成就 ----------
     def unlock(self, key):
-        """解锁成就; 返回是否为新解锁(便于前端即时提示)"""
-        ach = self._data.setdefault("achievements", {})
-        if ach.get(key):
-            return False
-        ach[key] = time.time()
-        self._save()
-        return True
+        """解锁成就; 返回是否为新解锁(便于前端即时提示)。线程安全。"""
+        with self._lock:
+            ach = self._data.setdefault("achievements", {})
+            if ach.get(key):
+                return False
+            ach[key] = time.time()
+            self._save()
+            return True
 
     def unlocked(self, key):
         return bool(self._data.get("achievements", {}).get(key))
@@ -86,8 +93,9 @@ class UserProfile:
         return str(self._data.get("nickname", "") or "").strip()
 
     def set_nickname(self, nickname):
-        """设置用户昵称(限长 20 字), 返回最终昵称。"""
-        nickname = str(nickname or "").strip()[:20]
-        self._data["nickname"] = nickname
-        self._save()
-        return nickname
+        """设置用户昵称(限长 20 字), 返回最终昵称。线程安全。"""
+        with self._lock:
+            nickname = str(nickname or "").strip()[:20]
+            self._data["nickname"] = nickname
+            self._save()
+            return nickname

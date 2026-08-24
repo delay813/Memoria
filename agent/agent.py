@@ -221,11 +221,14 @@ class Agent:
             print(f"[{self.name}] 历史保存失败: {e}")
 
     def get_history(self):
-        """返回该NPC的对话历史(不含system人格), 供前端恢复会话"""
+        """返回该NPC的对话历史(不含system人格), 供前端恢复会话。
+
+        附带 ts(秒级时间戳)供前端显示真实发送时间; 过滤掉流式中断产生的残片(interrupted)。
+        """
         return [
-            {"role": m["role"], "content": m["content"]}
+            {"role": m["role"], "content": m["content"], "ts": m.get("ts")}
             for m in self.history[1:]
-            if m.get("role") in ("user", "assistant")
+            if m.get("role") in ("user", "assistant") and not m.get("interrupted")
         ]
 
     def reset(self):
@@ -984,7 +987,8 @@ class Agent:
 
     def _recent_history_text(self, n=6):
         """最近对话文本(不含当前这条用户消息, 供认知步骤使用)"""
-        recent = [m for m in self.history[1:] if m.get("role") in ("user", "assistant")][-(n + 1):-1]
+        recent = [m for m in self.history[1:]
+                  if m.get("role") in ("user", "assistant") and not m.get("interrupted")][-(n + 1):-1]
         return "\n".join(f"{m['role']}: {self._clean_text(m.get('content', ''))}" for m in recent)
 
     # ============================================================
@@ -1112,7 +1116,8 @@ class Agent:
 
     def _extract_memory(self, history=None):
         history = history if history is not None else self.history
-        recent = [m for m in history[1:] if m.get("role") in ("user", "assistant")][
+        recent = [m for m in history[1:]
+                  if m.get("role") in ("user", "assistant") and not m.get("interrupted")][
             -config.MEMORY_INPUT_MAX_TURNS:
         ]
         history_text = "\n".join(
@@ -1245,7 +1250,8 @@ class Agent:
             batch_texts, batch_metas = [], []
             extra_tags = [str(t).strip() for t in (tags or []) if str(t).strip()]
             for m in removed:
-                if m.get("content") and _worth_remembering(m.get("content", "")):
+                if (m.get("content") and _worth_remembering(m.get("content", ""))
+                        and not m.get("interrupted")):  # 残片不写入长期记忆
                     topics = []
                     if m.get("topic"):
                         topics.append(str(m["topic"]).strip())
@@ -1491,9 +1497,11 @@ class Agent:
                 ),
             }]
             # 只传 role/content 给模型, 剥离历史消息上的内部字段(如 topic), 避免污染API调用
+            # 同时跳过流式中断产生的残片(interrupted), 防止截断内容进入模型上下文
             messages += [
                 {"role": m["role"], "content": m["content"]}
                 for m in self.history[1:]
+                if not m.get("interrupted")
             ]
 
             # 8) 当轮用户消息末尾追加硬性风格约束(只影响本次调用, 不入历史)
@@ -1505,6 +1513,7 @@ class Agent:
                 }
 
             full_answer = ""
+            interrupted = False
             attempt = 0
             while True:
                 try:
@@ -1529,18 +1538,25 @@ class Agent:
                         # 已输出部分内容, 不重试, 追加一句收尾
                         note = "（刚才好像断了一下）"
                         full_answer += note
+                        interrupted = True
                         yield {"type": "content", "data": note}
                         break
                     if attempt >= config.MODEL_MAX_RETRIES:
                         fallback = "（刚刚有点走神，能再说一遍吗？）"
                         full_answer = fallback
+                        interrupted = True
                         yield {"type": "content", "data": fallback}
                         break
                     attempt += 1
                     time.sleep(config.MODEL_RETRY_DELAY)
 
             # 助手回复入历史并保存(带本轮话题标签)
-            self.history.append({"role": "assistant", "content": full_answer, "topic": topic, "ts": time.time()})
+            # 流式中断/失败的残片打 interrupted 标记: 构建模型消息与历史返回时会过滤,
+            # 避免截断内容污染后续对话与记忆提取
+            msg = {"role": "assistant", "content": full_answer, "topic": topic, "ts": time.time()}
+            if interrupted:
+                msg["interrupted"] = True
+            self.history.append(msg)
             self._save_history()
 
             # 每轮同步结算好感度(带理由)并透出给前端即时反馈 + 关系里程碑

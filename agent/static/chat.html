@@ -1034,7 +1034,9 @@
             if (fb) body.appendChild(fb);
         }
         var time = document.createElement('div'); time.className = 'message-time';
-        time.textContent = (m.delayed ? '延迟回复 · ' : (m.proactive ? '主动发来 · ' : '')) + formatTime(Date.now());
+        // 优先显示消息真实时间(后端 ts 为秒级时间戳, 需转毫秒); 无 ts(如本地新消息)时兜底当前时间
+        var ts = m.ts ? Number(m.ts) * 1000 : Date.now();
+        time.textContent = (m.delayed ? '延迟回复 · ' : (m.proactive ? '主动发来 · ' : '')) + formatTime(ts);
         body.appendChild(time);
 
         row.appendChild(avatar); row.appendChild(body);
@@ -1262,7 +1264,7 @@
     $('resetBtn').addEventListener('click', async function () {
         if (!confirm('确定初始化所有角色吗？\n将清空全部对话记录、记忆和好感度，回到最初状态。')) return;
         try {
-            await api('/reset', { method: 'POST' });
+            await api('/reset?confirm=yes', { method: 'POST' });
             location.reload();
         } catch (e) {
             alert('初始化失败：' + e.message);

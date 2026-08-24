@@ -127,8 +127,14 @@ async def achievements():
 
 
 @app.get("/inbox")
-async def inbox_summary():
-    """用户上线时检查主动消息(惰性生成), 并返回各角色未读数"""
+def inbox_summary():
+    """用户上线时检查主动消息(惰性生成), 并返回各角色未读数
+
+    注意: 必须用普通 def, 不能 async def —— check_proactive() 内部会同步调用模型
+    生成主动消息(单次数秒)。async 端点的同步代码直接在事件循环里执行, 前端每 30s
+    轮询一次本接口会把整个服务阻塞数秒(表现为全站周期性卡顿)。普通 def 会被
+    FastAPI 自动放进线程池, 不阻塞事件循环。
+    """
     orch.check_proactive()
     return orch.inbox_summary()
 
@@ -159,8 +165,13 @@ async def world_state():
 
 
 @app.post("/reset")
-async def reset_all():
-    """初始化所有角色: 清空对话记录/记忆/好感度/日记, 重置世界状态"""
+async def reset_all(request: Request):
+    """初始化所有角色: 清空对话记录/记忆/好感度/日记, 重置世界状态
+
+    破坏性操作(不可恢复): 必须带 ?confirm=yes 才会真正执行, 防止误触/脚本误调清空全部数据。
+    """
+    if request.query_params.get("confirm") != "yes":
+        return {"error": "重置会清空所有角色的对话/记忆/好感度/日记，不可恢复。确认请调用 POST /reset?confirm=yes"}
     return orch.reset_all()
 
 
@@ -169,7 +180,8 @@ async def chat_stream(request: Request):
     """与指定NPC对话, SSE流式返回(注入今日世界上下文与特殊问候)"""
     body = await request.json()
     agent_id = body.get("agent_id")
-    question = body.get("question")
+    # 限长 2000 字符: 超长输入会直接进入对话历史/向量化/系统提示词, 造成 token 与费用爆炸
+    question = str(body.get("question") or "")[:2000]
 
     if not question:
         return {"error": "问题不能为空"}
