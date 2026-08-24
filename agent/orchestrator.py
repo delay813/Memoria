@@ -252,15 +252,19 @@ class Orchestrator:
             # 2) 节日/生日: 当天主动送祝福(每天一次)
             names = self._today_special_names(a)
             if names and a.get_last_proactive().get("festival") != today_iso:
+                # 先占位标记, 再生成: 前端每 30s 轮询 /inbox, 若生成(模型调用)耗时超过
+                # 轮询间隔会重复进入此分支, 导致同一天祝福发送两次
+                a.mark_proactive("festival", today_iso)
                 content = a.generate_proactive(f"今天是{'、'.join(names)}，想主动送上节日祝福或问候")
                 if content:
                     a.add_proactive("festival", content)
-                    a.mark_proactive("festival", today_iso)
                     self.user.unlock("first_proactive")
                     print(f"[{a.name}] 主动消息(节日): {content}")
                 continue
             # 3) 普通主动(想念/想起): 与好感度挂钩 + 随时间衰减 + 冷却
             if a.should_send_checkin(now):
+                # 先占位标记(写入冷却), 防止并发轮询重复生成同一条"想念"
+                a.mark_proactive("checkin", now)
                 days = 0
                 if a.get_last_seen():
                     try:
@@ -274,7 +278,6 @@ class Orchestrator:
                 content = a.generate_proactive(reason)
                 if content:
                     a.add_proactive("checkin", content)
-                    a.mark_proactive("checkin", now)
                     self.user.unlock("first_proactive")
                     print(f"[{a.name}] 主动消息(想念): {content}")
 
