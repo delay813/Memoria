@@ -12,6 +12,7 @@ from datetime import date, datetime
 
 import config
 import storage
+import time_utils
 
 
 class WorldClock:
@@ -105,12 +106,7 @@ class WorldClock:
     def is_sleep_window(now=None):
         """判断当前是否处于"睡眠窗口"(晚上特定时间段, 用于隔夜整理)。"""
         now = now or datetime.now()
-        h = now.hour
-        start, end = config.DREAM_SLEEP_START, config.DREAM_SLEEP_END
-        if start > end:
-            # 跨午夜窗口, 如 21:00 ~ 次日 06:00
-            return h >= start or h < end
-        return start <= h < end
+        return time_utils.in_interval(now.hour, config.DREAM_SLEEP_START, config.DREAM_SLEEP_END)
 
     def _sync_today(self):
         """用现实日期同步世界: 首次运行记录起始日; 跨天则记录"新的一天"事件"""

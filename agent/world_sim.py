@@ -13,13 +13,12 @@ from datetime import date, datetime, timedelta
 
 import config
 import storage
+import time_utils
 
 
 def _in_slot(hour, start, end):
-    """判断 hour(0~24, 可含小数) 是否落在 [start, end) 区间; end<=start 表示跨午夜。"""
-    if start < end:
-        return start <= hour < end
-    return hour >= start or hour < end
+    """判断 hour(0~24, 可含小数) 是否落在 [start, end) 区间; end<=start 表示跨午夜(复用 time_utils)。"""
+    return time_utils.in_interval(hour, start, end)
 
 
 def resolve_schedule(agent_id, now=None):
@@ -161,7 +160,7 @@ class LifeSim:
 
         幂等: 同一天多次调用不会重复生成; 首次运行只掷今天, 不回填历史。
         """
-        today = today or date.today().isoformat()
+        today = today or time_utils.today_iso()
         if self.last_sim_date is None:
             ev = self._roll_day(today, rng=rng)
             self.last_sim_date = today
@@ -197,7 +196,7 @@ class LifeSim:
     # ============================================================
     def today_event(self, today=None):
         """今天发生的事件(可能为 None)。"""
-        today = today or date.today().isoformat()
+        today = today or time_utils.today_iso()
         for ev in reversed(self.daily_events):
             if ev.get("date") == today:
                 return ev

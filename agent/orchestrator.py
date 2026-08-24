@@ -5,9 +5,9 @@
 """
 import random
 import time
-from datetime import date
 
 import config
+import time_utils
 from agent import Agent
 from narrator import WorldClock
 from user_profile import UserProfile
@@ -33,11 +33,17 @@ class Orchestrator:
         result = []
         for a in self.agents.values():
             st = a.current_status()
+            visual = config.NPC_VISUALS.get(a.agent_id, {})
             result.append({
                 "id": a.agent_id,
                 "name": a.name,
                 "description": a.description,
                 "birthday": a.birthday,
+                "avatar": visual.get("avatar", ""),
+                "card": visual.get("card", ""),
+                "en": visual.get("en", ""),
+                "tags": visual.get("tags", []),
+                "theme": visual.get("theme", {}),
                 "favorability": a.get_favor(),
                 "stage": a.get_stage(),
                 "mood": a.get_mood(),
@@ -81,10 +87,7 @@ class Orchestrator:
             last = a.get_last_seen()
             if not last:
                 continue
-            try:
-                days = (today - date.fromisoformat(last)).days
-            except Exception:
-                continue
+            days = time_utils.days_since(last, ref=today)
             if 0 <= days <= 2:
                 st = a.current_status()
                 ev = a.life.today_event()
@@ -260,12 +263,7 @@ class Orchestrator:
             # 3) 普通主动(想念/想起): 与好感度挂钩 + 随时间衰减 + 冷却
             if a.try_claim_checkin(now):
                 # try_claim_checkin 已原子占位(写入冷却), 防止并发轮询重复生成同一条"想念"
-                days = 0
-                if a.get_last_seen():
-                    try:
-                        days = (today - date.fromisoformat(a.get_last_seen())).days
-                    except Exception:
-                        days = 0
+                days = time_utils.days_since(a.get_last_seen(), ref=today)
                 reason = f"已经有{days}天没和对方联系了，心里有点想念"
                 script = a.get_daily_script() or {}
                 if script.get("outline"):

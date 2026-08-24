@@ -98,18 +98,32 @@
 
 ```
 .
-├── agent/                        # 后端代码（Python 包）
+├── agent/                        # 后端代码
 │   ├── server.py                 # FastAPI 入口 + 全部 HTTP/SSE 接口
 │   ├── orchestrator.py           # 总控：加载 NPC + 世界时钟 + 主动消息
-│   ├── agent.py                  # 单个 NPC：人格/心情/好感度/认知/对话
+│   ├── agent.py                  # 单个 NPC 骨架：状态/历史初始化 + 流式对话编排
+│   ├── persona.py                # 人格内核（蒸馏 / 成长 / 重写）
+│   ├── relationship.py           # 好感度 / 心情 / 关系张力 / 称呼 / 语录
+│   ├── memory.py                 # 记忆抽取与压缩（画像 + 摘要 + 事实）
+│   ├── dream.py                  # 深睡 · 隔夜整理（回忆日记）
+│   ├── proactive.py              # 主动消息 / 延迟回复 / 里程碑剧情
+│   ├── cognition.py              # 读心 / 内心独白 / 系统提示词构造
+│   ├── world.py                  # 作息状态 / 随机事件 / 命运大纲接入
+│   ├── topics.py                 # 开场话题生成 + 缓存
 │   ├── longterm_memory.py        # 长期记忆（Chroma + BM25 + rerank + 四维加权 + 软遗忘）
 │   ├── fact_memory.py            # 结构化事实库（语义记忆）
 │   ├── narrator.py               # 世界时钟（现实时间 + 节日日历）
 │   ├── world_sim.py              # 世界模拟（作息 + 随机事件状态机）
 │   ├── user_profile.py           # 单用户档案（昵称 + 成就系统）
-│   ├── config.py                 # 全部配置（含 .env 加载）
+│   ├── llm.py                    # 统一 LLM 调用（重试 / 取文本）
+│   ├── json_utils.py             # LLM 输出 JSON 稳健解析
+│   ├── text_utils.py             # 分词 / markdown 清洗 / 记忆价值判断
+│   ├── time_utils.py             # 现实日期 / 跨午夜区间 / 天数差
+│   ├── prompts.py                # 共享行为准则与输出格式约束
+│   ├── config.py                 # 全部配置（含 .env 加载 + JSON 数据加载）
 │   ├── storage.py                # 统一原子写 JSON（先写临时文件再覆盖，防并发/崩溃写出半截文件）
-│   ├── agents.json               # NPC 初始人设配置（新增角色在这里改）
+│   ├── agents.json               # NPC 配置（人设 + 作息/语录/随机事件 + 头像/卡面/主题色）
+│   ├── npc_common.json           # 兜底作息 + 通用随机事件池
 │   ├── calendar.json             # 特殊日期（节日）日历
 │   ├── world.json                # 世界状态（运行时生成，勿手动改）
 │   ├── user.json                 # 用户档案数据（昵称/成就，运行时生成，已 gitignore）
@@ -213,6 +227,7 @@ pytest -q
 |---|---|---|
 | `MEMORY_RECALL_K` | 3 | 每轮注入的相关记忆条数 |
 | `MEMORY_RECALL_THRESHOLD` | 0.1 | 记忆相关性下限 |
+| `MEMORY_RERANK_ENABLED` | `True` | 是否启用 rerank 精排（关闭可省一次 API 调用，由三维加权继续排序） |
 | `MEMORY_KEEP_TURNS` | 4 | 压缩后保留的近期轮数 |
 | `COGNITION_ENABLED` | `True` | 是否开启「读心 + 内心独白」（关闭可降低延迟） |
 | `MEMORY_EMOTION_BONUS` | 3 | 情绪记忆的重要性加成 |
@@ -235,7 +250,9 @@ pytest -q
 | `CROSS_NPC_RELAY_PROBABILITY` | 0.2 | 普通主动消息中转述另一位角色近况的概率 |
 
 ### 新增 / 修改角色
-编辑 `agent/agents.json`，每个角色包含 `id`、`name`、`description`、`birthday`（`MM-DD` 格式，可留空）和 `persona`（完整人设）。人格内核会在首次对话时自动蒸馏生成，无需手工维护 `人格.md`。
+编辑 `agent/agents.json`，每个角色包含 `id`、`name`、`description`、`birthday`（`MM-DD` 格式，可留空）和 `persona`（完整人设）。可选字段：`schedule`（作息表）、`random_events`（专属随机事件）、`quotes`（角色卡语录池），以及前端视觉资料 `avatar` / `card` / `en` / `tags` / `theme`。人格内核会在首次对话时自动蒸馏生成，无需手工维护 `人格.md`。
+
+> 作息兜底与通用随机事件池在 `agent/npc_common.json`；角色视觉资料与主题色由 `/agents` 接口下发，新增角色无需再改前端代码。
 
 ### 特殊日期
 编辑 `agent/calendar.json`，按 `{"month": 12, "day": 25, "name": "圣诞节", "description": "..."}` 的格式添加节日。
@@ -268,7 +285,7 @@ pytest -q
 
 - **单用户设计**：好感度 / 心情 / 记忆都以「单一用户」为前提，未做多用户隔离；服务默认只监听 `127.0.0.1`，无鉴权，请勿直接暴露公网。
 - **锁粒度**：为避免并发污染历史，单个 NPC 的对话持有锁到流式结束；多角色并发不受影响。
-- **前端角色硬编码**：`static/chat.html` 中角色头像、卡面、主题色、语录按 `agent_id` 写死，新增角色需同步修改前端的 `CHARACTERS` / `THEMES` 映射。
+- **前端角色数据已数据驱动**：角色头像/卡面/主题色/标签/语录由 `agents.json` 配置、经 `/agents` 接口下发，前端不再硬编码（原 `CHARACTERS`/`THEMES` 映射已移除）。
 - **事实库为轻量实现**：事实检索用关键词重叠打分（事实量小，足够）；如需更强语义匹配可换向量检索。
 - **记忆固化**：稳定事实通过「整体合并重写」沉淀进事实库；尚未做「反复回忆 → 自动晋升」的显式固化。
 - **未来可做**：情绪效价显式回流到记忆加权、跨角色互动、多模态（语音/图片）、多用户隔离与鉴权、更细的对话修复策略。

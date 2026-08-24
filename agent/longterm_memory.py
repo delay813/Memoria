@@ -11,13 +11,16 @@ import re
 import time
 import uuid
 
-from dashscope import Generation, TextReRank
+from dashscope import TextReRank
 from langchain_chroma import Chroma
 from langchain_community.embeddings import DashScopeEmbeddings
 from langchain_core.documents import Document
 
 import config
+import json_utils
+import llm
 import storage
+import text_utils
 
 
 class SimpleBM25:
@@ -38,12 +41,8 @@ class SimpleBM25:
 
     @staticmethod
     def _tokenize(text):
-        """英文/数字按单词, 中文按双字词(bigram)切分; bigram 比单字有语义区分度, 且零依赖。"""
-        text = (text or "").lower()
-        tokens = re.findall(r"[a-z0-9]+", text)
-        han = "".join(re.findall(r"[\u4e00-\u9fff]", text))
-        tokens += [han[i:i + 2] for i in range(len(han) - 1)]
-        return tokens
+        """英文/数字按单词, 中文按双字词(bigram)切分; 复用 text_utils。"""
+        return text_utils.tokenize(text)
 
     def _idf(self, term):
         df = self.df.get(term, 0)
@@ -147,24 +146,6 @@ class LongTermMemory:
         freq_norm = min(1.0, freq / config.MEMORY_FREQ_NORMALIZE)
         idle_decay = math.exp(-idle_days / config.MEMORY_FREQ_HALF_LIFE_DAYS)
         return freq_norm * idle_decay
-
-    def _call_small(self, prompt):
-        """调用小模型(遗忘判断用), 带重试"""
-        for attempt in range(config.MODEL_MAX_RETRIES + 1):
-            try:
-                resp = Generation.call(
-                    api_key=config.API_KEY,
-                    model=config.FORGET_MODEL,
-                    messages=[{"role": "user", "content": prompt}],
-                    result_format="message",
-                )
-                if resp.status_code == 200:
-                    return resp
-            except Exception as e:
-                print(f"[长期记忆] 遗忘模型调用异常(第{attempt+1}次): {e}")
-            if attempt < config.MODEL_MAX_RETRIES:
-                time.sleep(config.MODEL_RETRY_DELAY)
-        return None
 
     # ============================================================
     # 小块切分
@@ -340,7 +321,7 @@ class LongTermMemory:
 {new_text}
 
 只输出一个词:"""
-        resp = self._call_small(prompt)
+        resp = llm.call([{"role": "user", "content": prompt}], model=config.FORGET_MODEL)
         if not resp:
             return "new"
         content = resp.output.choices[0].message.content.strip().lower()
@@ -363,7 +344,7 @@ class LongTermMemory:
 
 【新记忆】
 {new_text}"""
-        resp = self._call_small(prompt)
+        resp = llm.call([{"role": "user", "content": prompt}], model=config.FORGET_MODEL)
         if not resp:
             return None
         return resp.output.choices[0].message.content.strip()
@@ -635,6 +616,11 @@ class LongTermMemory:
         """重排模型对候选父块精排; 返回(文本列表, 分数列表)。失败时分数为None"""
         if not candidates:
             return [], []
+        # 省流开关: 关闭重排时跳过 rerank API 调用, 分数置 None(下游退化为统一相似度),
+        # 由时近性/重要性/访问频率三维继续排序, 与"重排失败"的既有降级路径一致。
+        if not config.MEMORY_RERANK_ENABLED:
+            n = min(top_n, len(candidates))
+            return candidates[:n], [None] * n
         try:
             resp = TextReRank.call(
                 model=config.RERANK_MODEL,
@@ -661,6 +647,28 @@ class LongTermMemory:
     # ============================================================
     # 遗忘机制(小模型驱动)
     # ============================================================
+    def _mark_forgotten(self, pid, penalty=4, hard_delete=True):
+        """软遗忘的统一入口: 标记 status=forgotten 并降低重要度。
+
+        重要度降到谷底(<=1)时, 视 hard_delete 决定是否物理删除。
+        forget(低价值遗忘)与 suppress_conflicts(事实冲突)共用此逻辑。
+        返回是否真正执行了遗忘(已遗忘/不存在则 False)。
+        """
+        entry = self._registry.get(pid)
+        if not entry:
+            return False
+        if entry.get("status") == "forgotten":
+            return False
+        entry["status"] = "forgotten"
+        entry["importance"] = max(1, min(10, (entry.get("importance", 5) or 5) - penalty))
+        if hard_delete and entry["importance"] <= 1:
+            try:
+                self.store.delete(where={"parent_id": pid})
+            except Exception as e:
+                print(f"[长期记忆] 删除记忆 {pid} 失败: {e}")
+            self._registry.pop(pid, None)
+        return True
+
     def forget(self, agent_name=""):
         """评估候选记忆, 低价值则遗忘(删除), 避免向量库只增不减"""
         now = time.time()
@@ -697,16 +705,11 @@ class LongTermMemory:
 【候选记忆】
 {json.dumps(items, ensure_ascii=False)}
 """
-        resp = self._call_small(prompt)
+        resp = llm.call([{"role": "user", "content": prompt}], model=config.FORGET_MODEL)
         if not resp:
             return 0
         content = resp.output.choices[0].message.content
-        content = re.sub(r"```(?:json)?", "", content)
-        match = re.search(r"\[.*\]", content, re.DOTALL)
-        try:
-            decisions = json.loads(match.group(0)) if match else []
-        except Exception:
-            decisions = []
+        decisions = json_utils.parse_array(content)
 
         forgotten = 0
         for d in decisions:
@@ -714,18 +717,8 @@ class LongTermMemory:
             if pid not in self._registry:
                 continue
             if d.get("decision") == "forget":
-                entry = self._registry[pid]
-                # 软遗忘: 先标记"想不起来"(不注入召回), 而非物理删除
-                entry["status"] = "forgotten"
-                entry["importance"] = max(1, min(10, (entry.get("importance", 5) or 5) - 4))
-                # 重要度已降到谷底, 才物理删除
-                if entry["importance"] <= 1:
-                    try:
-                        self.store.delete(where={"parent_id": pid})
-                    except Exception as e:
-                        print(f"[长期记忆] 删除记忆 {pid} 失败: {e}")
-                    self._registry.pop(pid, None)
-                forgotten += 1
+                if self._mark_forgotten(pid, penalty=4):
+                    forgotten += 1
             else:
                 try:
                     imp = int(d.get("importance", 5) or 5)
@@ -776,12 +769,8 @@ class LongTermMemory:
                 pid = doc.metadata.get("parent_id")
                 if not pid or pid not in self._registry:
                     continue
-                entry = self._registry[pid]
-                if entry.get("status") == "forgotten":
-                    continue
-                entry["status"] = "forgotten"
-                entry["importance"] = max(1, min(10, (entry.get("importance", 5) or 5) - 3))
-                suppressed.add(pid)
+                if self._mark_forgotten(pid, penalty=3, hard_delete=False):
+                    suppressed.add(pid)
 
         if suppressed:
             self._save_registry()

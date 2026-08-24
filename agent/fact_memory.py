@@ -6,11 +6,11 @@
 """
 import json
 import os
-import re
 import time
 
 import config
 import storage
+import text_utils
 
 
 class FactMemory:
@@ -45,13 +45,8 @@ class FactMemory:
     # ============================================================
     @staticmethod
     def _tokenize(text):
-        text = (text or "").lower()
-        tokens = set(re.findall(r"[a-z0-9]+", text))
-        # 中文双字词(去掉标点/空白后按相邻两字聚合)
-        han = "".join(re.findall(r"[\u4e00-\u9fff]", text))
-        for i in range(len(han) - 1):
-            tokens.add(han[i:i + 2])
-        return tokens
+        """英文/数字按单词, 中文按双字词; 复用 text_utils(返回集合)。"""
+        return text_utils.tokenize_set(text)
 
     # ============================================================
     # 更新 / 检索

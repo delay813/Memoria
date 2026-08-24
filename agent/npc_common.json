@@ -1,0 +1,22 @@
+{
+  "default_schedule": [
+    {"start": 0, "end": 8, "activity": "在休息", "label": "休息中", "busy": true, "sleepy": true},
+    {"start": 8, "end": 12, "activity": "在忙自己的事", "label": "忙碌中", "busy": true},
+    {"start": 12, "end": 14, "activity": "在午休", "label": "午休中", "busy": false},
+    {"start": 14, "end": 18, "activity": "在忙自己的事", "label": "忙碌中", "busy": true},
+    {"start": 18, "end": 23, "activity": "在休息", "label": "空闲", "busy": false},
+    {"start": 23, "end": 24, "activity": "在休息", "label": "休息中", "busy": true, "sleepy": true}
+  ],
+  "random_events": [
+    {"key": "exam_fail", "text": "今天有一门课考砸了，心情很低落", "mood": -3, "kind": "低落",
+     "followup": {"key": "exam_redemption", "delay_days": 2, "text": "成绩出来了，其实没那么糟，松了口气", "mood": 2, "kind": "松了口气"}},
+    {"key": "got_praise", "text": "今天被老师/前辈夸了一句，有点开心", "mood": 2, "kind": "开心"},
+    {"key": "tired_day", "text": "今天忙了一整天，有点累", "mood": -1, "kind": "疲惫"},
+    {"key": "good_read", "text": "今天读到一段很喜欢的内容，心情很好", "mood": 1, "kind": "愉快"},
+    {"key": "small_worry", "text": "今天有件小事一直放在心上，有点烦", "mood": -2, "kind": "烦闷"},
+    {"key": "nice_weather", "text": "今天天气很好，心情也跟着亮了起来", "mood": 1, "kind": "愉快"},
+    {"key": "caught_cold", "text": "今天好像有点着凉，身体不太舒服", "mood": -2, "kind": "不舒服",
+     "followup": {"key": "recovered", "delay_days": 2, "text": "感冒好多了，精神终于回来了", "mood": 1, "kind": "痊愈"}},
+    {"key": "happy_surprise", "text": "今天遇到一件让人意外开心的事", "mood": 2, "kind": "雀跃"}
+  ]
+}

@@ -131,6 +131,7 @@ MEMORY_RECALL_THRESHOLD = 0.1  # 相关性阈值: rerank分数低于此值的记
 MEMORY_SMALL_CHUNK_SIZE = 150  # 小块切分粒度(字符), 超过则按句子切分
 MEMORY_HYBRID_TOPN = 12        # 混合检索中, 向量/BM25 每路返回的小块数
 MEMORY_RERANK_TOPN = 9         # 送入重排模型的父块候选数
+MEMORY_RERANK_ENABLED = True   # 是否启用 rerank 精排(关闭可省一次 API 调用, 由三维加权继续排序)
 MEMORY_ACCESS_SAVE_INTERVAL = 60  # 召回访问计数落盘节流(秒): 避免每轮对话都写一次注册表文件
 MEMORY_FACT_CONFLICT_THRESHOLD = 0.72  # 事实更新时, 语义相似度≥此值的旧情景记忆判"冲突"并软遗忘
 
@@ -267,47 +268,25 @@ LIFE_BACKFILL_MAX_DAYS = 7       # 用户离开后最多回填/模拟的天数(�
 LIFE_EVENTS_KEEP = 30            # 每个角色保留的最近事件条数
 SLEEP_PENDING_MAX = 5            # 深夜睡着时最多积压几条待补回的消息
 
-# 作息表槽位: {start, end, activity, label, busy, sleepy?}
-# - start/end: 小时(0~24), end<=start 表示跨午夜
-# - activity: 正在做的事(注入对话, 如"在教室上课")
-# - label: 给前端展示的简短状态(如"上课中")
-# - busy: 是否在忙(忙时角色回复会自然说"晚点回你")
-# - sleepy: 是否在睡觉(深夜回复带睡意)
-NPC_SCHEDULES = {
-    "npc_01": [  # 星野璃: 计算机系学姐
-        {"start": 0, "end": 7, "activity": "在睡觉", "label": "睡觉中", "busy": True, "sleepy": True},
-        {"start": 7, "end": 8, "activity": "起床洗漱、吃早餐", "label": "准备出门", "busy": False},
-        {"start": 8, "end": 12, "activity": "在教室上课", "label": "上课中", "busy": True},
-        {"start": 12, "end": 14, "activity": "午休吃饭", "label": "午休中", "busy": False},
-        {"start": 14, "end": 17, "activity": "在实验室/教室上课", "label": "上课中", "busy": True},
-        {"start": 17, "end": 19, "activity": "在社团写代码", "label": "社团活动中", "busy": True},
-        {"start": 19, "end": 22, "activity": "在宿舍放松、打游戏", "label": "空闲", "busy": False},
-        {"start": 22, "end": 24, "activity": "在睡觉", "label": "睡觉中", "busy": True, "sleepy": True},
-    ],
-    "npc_02": [  # 苏晚柠: 文学院社长
-        {"start": 0, "end": 7, "activity": "在睡觉", "label": "睡觉中", "busy": True, "sleepy": True},
-        {"start": 7, "end": 8, "activity": "起床、晨读", "label": "准备出门", "busy": False},
-        {"start": 8, "end": 12, "activity": "在教室上课", "label": "上课中", "busy": True},
-        {"start": 12, "end": 14, "activity": "午休、在图书馆看书", "label": "午休中", "busy": False},
-        {"start": 14, "end": 17, "activity": "在图书馆自习", "label": "自习中", "busy": True},
-        {"start": 17, "end": 19, "activity": "在文学社活动", "label": "社团活动中", "busy": True},
-        {"start": 19, "end": 22, "activity": "在宿舍看书、写随笔", "label": "空闲", "busy": False},
-        {"start": 22, "end": 24, "activity": "在睡觉", "label": "睡觉中", "busy": True, "sleepy": True},
-    ],
-    "npc_03": [  # 白河祈: 巫女学姐
-        {"start": 0, "end": 6, "activity": "在睡觉", "label": "睡觉中", "busy": True, "sleepy": True},
-        {"start": 6, "end": 7, "activity": "起床做晨间祈祷", "label": "晨祷中", "busy": True},
-        {"start": 7, "end": 8, "activity": "吃早餐、准备上学", "label": "准备出门", "busy": False},
-        {"start": 8, "end": 12, "activity": "在教室上课", "label": "上课中", "busy": True},
-        {"start": 12, "end": 14, "activity": "午休、在神社帮忙", "label": "午休中", "busy": False},
-        {"start": 14, "end": 17, "activity": "在神社值班", "label": "神社值班中", "busy": True},
-        {"start": 17, "end": 19, "activity": "在巫女修行/弓道", "label": "修行中", "busy": True},
-        {"start": 19, "end": 22, "activity": "在宿舍读书、做御守", "label": "空闲", "busy": False},
-        {"start": 22, "end": 24, "activity": "在睡觉", "label": "睡觉中", "busy": True, "sleepy": True},
-    ],
-}
+# ============================================================
+# NPC 数据(外置到 JSON, 新增/修改角色与事件不再改 Python 代码)
+# - agents.json: 每个角色的 schedule/random_events/quotes + 前端视觉资料(avatar/card/en/tags/theme)
+# - npc_common.json: 兜底作息 DEFAULT_SCHEDULE + 通用随机事件池 RANDOM_EVENTS
+# ============================================================
+def _read_json_data(path, default):
+    """读取 JSON 数据文件; 失败降级为 default 并打印提示。"""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"[config] 数据文件加载失败 {path}: {e}")
+        return default
 
-DEFAULT_SCHEDULE = [  # 新增角色未单独配置作息时使用
+
+_COMMON = _read_json_data(os.path.join(BASE_DIR, "npc_common.json"), {})
+
+# 兜底作息(新增角色未单独配置作息时使用)
+DEFAULT_SCHEDULE = _COMMON.get("default_schedule") or [
     {"start": 0, "end": 8, "activity": "在休息", "label": "休息中", "busy": True, "sleepy": True},
     {"start": 8, "end": 12, "activity": "在忙自己的事", "label": "忙碌中", "busy": True},
     {"start": 12, "end": 14, "activity": "在午休", "label": "午休中", "busy": False},
@@ -316,95 +295,23 @@ DEFAULT_SCHEDULE = [  # 新增角色未单独配置作息时使用
     {"start": 23, "end": 24, "activity": "在休息", "label": "休息中", "busy": True, "sleepy": True},
 ]
 
-# 随机事件池: 通用事件(所有角色) + 每个角色专属事件, 每天低概率触发一条
-# 部分事件带 followup(后续链): 命中后 delay_days 天会确定性触发后续事件, 形成"追剧感"
-RANDOM_EVENTS = [
-    {"key": "exam_fail", "text": "今天有一门课考砸了，心情很低落", "mood": -3, "kind": "低落",
-     "followup": {"key": "exam_redemption", "delay_days": 2, "text": "成绩出来了，其实没那么糟，松了口气", "mood": 2, "kind": "松了口气"}},
-    {"key": "got_praise", "text": "今天被老师/前辈夸了一句，有点开心", "mood": 2, "kind": "开心"},
-    {"key": "tired_day", "text": "今天忙了一整天，有点累", "mood": -1, "kind": "疲惫"},
-    {"key": "good_read", "text": "今天读到一段很喜欢的内容，心情很好", "mood": 1, "kind": "愉快"},
-    {"key": "small_worry", "text": "今天有件小事一直放在心上，有点烦", "mood": -2, "kind": "烦闷"},
-    {"key": "nice_weather", "text": "今天天气很好，心情也跟着亮了起来", "mood": 1, "kind": "愉快"},
-    {"key": "caught_cold", "text": "今天好像有点着凉，身体不太舒服", "mood": -2, "kind": "不舒服",
-     "followup": {"key": "recovered", "delay_days": 2, "text": "感冒好多了，精神终于回来了", "mood": 1, "kind": "痊愈"}},
-    {"key": "happy_surprise", "text": "今天遇到一件让人意外开心的事", "mood": 2, "kind": "雀跃"},
-]
+# 通用随机事件池(所有角色)
+RANDOM_EVENTS = _COMMON.get("random_events") or []
 
-NPC_RANDOM_EVENTS = {
-    "npc_01": [
-        {"key": "debug_stuck", "text": "今天 debug 卡了好久，有点烦躁", "mood": -2, "kind": "烦躁",
-         "followup": {"key": "debug_solved", "delay_days": 1, "text": "昨天那个 bug 终于找到原因了，超有成就感", "mood": 2, "kind": "开心"}},
-        {"key": "code_passed", "text": "今天写的代码一次就通过了，很有成就感", "mood": 2, "kind": "开心"},
-        {"key": "help_junior", "text": "今天帮学弟学妹解决了一个难题，心里很满足", "mood": 2, "kind": "满足"},
-    ],
-    "npc_02": [
-        {"key": "club_smooth", "text": "今天文学社的活动特别顺利，很开心", "mood": 2, "kind": "开心"},
-        {"key": "manuscript_rejected", "text": "今天投稿的一篇文章被退回了，有点失落", "mood": -2, "kind": "失落",
-         "followup": {"key": "manuscript_accepted", "delay_days": 2, "text": "今天重写了一版，被编辑夸了，重拾信心", "mood": 2, "kind": "开心"}},
-        {"key": "beautiful_poem", "text": "今天读到一首很美的诗，一直回味", "mood": 1, "kind": "愉快"},
-    ],
-    "npc_03": [
-        {"key": "shrine_guest", "text": "今天神社来了一位特别的香客，很触动", "mood": 1, "kind": "触动"},
-        {"key": "omamori_done", "text": "今天做完了很多御守，很有成就感", "mood": 1, "kind": "满足"},
-        {"key": "training_hard", "text": "今天弓道练习很吃力，有点沮丧", "mood": -2, "kind": "沮丧",
-         "followup": {"key": "training_improved", "delay_days": 1, "text": "今天的弓道练习终于有进步，很开心", "mood": 1, "kind": "开心"}},
-    ],
-}
-
-# 角色卡语录池: 随心情/关系阶段/状态动态变化(优先: 睡觉 > 冷战 > 心情非平静 > 关系阶段 > 平静兜底)
-NPC_QUOTES = {
-    "npc_01": {
-        "sleepy": "……好困，让璃璃再睡五分钟。",
-        "cold": "……（不理你）",
-        "mood": {
-            "雀跃": "今天代码一次就过，心情超好！",
-            "愉快": "哼哼～今天心情不错。",
-            "平静": "真正的强大，不是从不迷茫，而是在迷茫中依然选择前进。",
-            "烦闷": "……debug 卡住了，先别惹我。",
-            "低落": "有点提不起劲……不过没事的。",
-        },
-        "stage": {
-            "陌生": "初次见面，我是星野璃。",
-            "熟悉": "有问题随时来问我呀。",
-            "亲近": "和你说话，总是很轻松。",
-            "亲密": "有你在，就觉得很安心。",
-        },
-    },
-    "npc_02": {
-        "sleepy": "夜深了，愿你也有个温柔的梦。",
-        "cold": "……（把书轻轻合上，别过脸）",
-        "mood": {
-            "雀跃": "今天的风都是甜的呢。",
-            "愉快": "心里暖暖的，像晒着太阳。",
-            "平静": "真正的温柔，不是从不脆弱，而是在安静里依然愿意陪你慢下来。",
-            "烦闷": "……有点心事，让我安静一会儿。",
-            "低落": "今天的雨，好像下进心里了。",
-        },
-        "stage": {
-            "陌生": "你好，我是文学社的苏晚柠。",
-            "熟悉": "有空来图书馆坐坐吧。",
-            "亲近": "你来了，我心里就很安稳。",
-            "亲密": "想和你，慢慢看遍四季。",
-        },
-    },
-    "npc_03": {
-        "sleepy": "夜深，祈愿君安眠。",
-        "cold": "……（垂眸，安静不语）",
-        "mood": {
-            "雀跃": "今日的风铃，响得格外清脆。",
-            "愉快": "心静如水，也微有涟漪。",
-            "平静": "愿以安静的祈愿，抚平你眉间的褶皱。",
-            "烦闷": "……今日心绪略乱。",
-            "低落": "连樱色都黯淡了些。",
-        },
-        "stage": {
-            "陌生": "初次见面，我是白河祈。",
-            "熟悉": "若有烦忧，可说与我听。",
-            "亲近": "与你并肩，心便安宁。",
-            "亲密": "愿我的祈愿，只为你一人。",
-        },
-    },
+# 每个角色独有的数据(作息/专属事件/语录/前端视觉资料)
+_AGENTS_DATA = _read_json_data(AGENTS_CONFIG_FILE, {}).get("agents", [])
+NPC_SCHEDULES = {a["id"]: a["schedule"] for a in _AGENTS_DATA if a.get("schedule")}
+NPC_RANDOM_EVENTS = {a["id"]: a["random_events"] for a in _AGENTS_DATA if a.get("random_events")}
+NPC_QUOTES = {a["id"]: a["quotes"] for a in _AGENTS_DATA if a.get("quotes")}
+NPC_VISUALS = {
+    a["id"]: {
+        "avatar": a.get("avatar", ""),
+        "card": a.get("card", ""),
+        "en": a.get("en", ""),
+        "tags": a.get("tags", []),
+        "theme": a.get("theme", {}),
+    }
+    for a in _AGENTS_DATA
 }
 
 
@@ -420,6 +327,5 @@ TENSION_WARM_SOOTHE = -2       # 单轮好感度 >= +5 时的张力减量(真诚
 
 
 def load_agents_config():
-    """加载 agents.json, 返回配置字典"""
-    with open(AGENTS_CONFIG_FILE, "r", encoding="utf-8") as f:
-        return json.load(f)
+    """返回 agents.json 的配置字典(启动时已加载缓存)。"""
+    return {"agents": _AGENTS_DATA}

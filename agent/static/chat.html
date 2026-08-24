@@ -121,29 +121,7 @@
 
 <script>
 (function () {
-    // 角色视觉资料(图片/标签/语录), 按 agent_id 映射
-    var CHARACTERS = {
-        npc_01: {
-            avatar: "avatar_ruri.jpg", card: "card_ruri.jpg",
-            en: "Star Ruri", tags: ["帝国理工 · 计算机系", "反差萌学霸", "机械系美少女"],
-            quote: "真正的强大，不是从不迷茫，而是在迷茫中依然选择前进。"
-        },
-        npc_02: {
-            avatar: "avatar_wanning.jpg", card: "card_wanning.jpg",
-            en: "Su Wanning", tags: ["江南大学 · 文学院", "图书馆白月光", "文学社长"],
-            quote: "真正的温柔，不是从不脆弱，而是在安静里依然愿意陪你慢下来。"
-        },
-        npc_03: {
-            avatar: "avatar_shirakawa.jpg", card: "card_shirakawa.jpg",
-            en: "Shirakawa Inori", tags: ["樱守御神学园", "世代巫女", "神明系学姐"],
-            quote: "愿以安静的祈愿，抚平你眉间的褶皱。"
-        }
-    };
-    var THEMES = {
-        npc_01: { sidebar: '#0f1429', primary: '#5b7cff', soft: '#8aa4ff', accent: '#b794f6', user: 'linear-gradient(135deg,#5b7cff,#7c6dfc)' },
-        npc_02: { sidebar: '#2a2420', primary: '#d49a6a', soft: '#e0b48c', accent: '#8fae8b', user: 'linear-gradient(135deg,#d49a6a,#c98a8a)' },
-        npc_03: { sidebar: '#1a2429', primary: '#6a9cb0', soft: '#9cc4d4', accent: '#b0a0c0', user: 'linear-gradient(135deg,#6a9cb0,#8a9ec0)' }
-    };
+    // 角色视觉资料(头像/卡面/英文名/标签/语录/主题色)已由后端 /agents 返回, 前端不再硬编码
     // 主动消息 kind → 展示标签
     var PROACTIVE_LABELS = { festival: '节日问候', checkin: '想念', reply: '延迟回复', milestone: '关系里程碑', reconcile: '和好' };
 
@@ -166,9 +144,14 @@
         });
     }
 
-    function vis(id) { return CHARACTERS[id] || { avatar: '', card: '', en: '', tags: [], quote: '' }; }
+    function vis(id) {
+        for (var i = 0; i < state.agents.length; i++) {
+            if (state.agents[i].id === id) return state.agents[i];
+        }
+        return { avatar: '', card: '', en: '', tags: [], quote: '', theme: null };
+    }
     var DEFAULT_THEME = { sidebar: '#0f1429', primary: '#5b7cff', soft: '#8aa4ff', accent: '#b794f6', user: 'linear-gradient(135deg,#5b7cff,#7c6dfc)' };
-    function theme(id) { return THEMES[id] || DEFAULT_THEME; }
+    function theme(id) { var v = vis(id); return (v && v.theme) ? v.theme : DEFAULT_THEME; }
     function curAgent() {
         for (var i = 0; i < state.agents.length; i++) if (state.agents[i].id === state.currentId) return state.agents[i];
         return null;
